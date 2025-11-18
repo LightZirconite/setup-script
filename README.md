@@ -1,262 +1,178 @@
 # Windows Setup Script
 
-Comprehensive Windows setup and configuration script with automatic detection, software installation, and optimization options.
+Script interactif de configuration Windows avec détection automatique, installation de logiciels et optimisation système.
 
-## Quick Start
-
-### Windows - Interactive Setup Script
+## Installation
 
 ```powershell
-# Download and run the interactive setup script
+# Télécharger le script
+Invoke-WebRequest -Uri "https://github.com/LightZirconite/setup-script/raw/main/setup-windows.ps1" -OutFile "setup-windows.ps1"
+
+# Autoriser l'exécution et lancer
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 .\setup-windows.ps1
 ```
 
-### Windows - Original Installation Script
+## Prérequis
 
-```ps
-irm https://github.com/LightZirconite/setup-script/raw/main/setupScript.ps1 | iex
-```
+- Windows 10 ou Windows 11
+- PowerShell 5.1+
+- Droits administrateur
+- Connexion internet
+- Winget (App Installer) recommandé
 
-### Linux - Installation Script
+## Fonctionnalités
 
-```bash
-curl -sSL https://github.com/LightZirconite/setup-script/raw/main/setupScript.sh | sudo bash
-```
+### Détection Automatique
+- ✅ Détecte automatiquement l'édition Windows (LTSC/IoT vs Standard)
+- ✅ Active des options spécifiques selon l'édition détectée
 
----
+### Mode Interactif
+- ✅ Questions Y/N avec descriptions détaillées
+- ✅ Collecte toutes les réponses AVANT d'installer
+- ✅ Gestion d'erreurs robuste avec sortie colorée
+- ✅ Vérification des privilèges administrateur
 
-## Interactive Setup Script Features
-
-### Core Capabilities
-- ✅ **Automatic Windows Edition Detection** (LTSC/IoT vs Standard Windows 10/11)
-- ✅ **Interactive Y/N Prompts** with detailed descriptions for each option
-- ✅ **Question Collection Phase** - All questions asked first, installations happen afterward
-- ✅ **Error Handling** - Robust error handling with colored output
-- ✅ **Administrator Check** - Requires and verifies admin privileges
-
-### Installation Options
+### Options d'Installation
 
 #### Office & Activation
-- Microsoft Office installation (winget or direct download)
-- Windows/Office activation via Microsoft Activation Scripts (MAS)
+- Installation Microsoft Office (via winget ou téléchargement direct)
+- Activation Windows/Office via Microsoft Activation Scripts
 
-#### Software via Winget
+#### Logiciels (winget)
 - Discord (stable, PTB, Canary)
 - Steam
 - Spotify
-- Terminus terminal
+- Terminus
 - Visual Studio Code
 - Firefox
 - Python
 - Node.js
 
-#### Remote Management
-- Mesh Agent with full installation
+#### Gestion à Distance
+- Mesh Agent (avec paramètre -fullinstall)
 
-#### Setup Modes
+#### Modes de Configuration
 
-**Performance Mode:**
-- Bulk Crap Uninstaller (deep software removal)
-- Rytunex (system optimization)
-- Windows LTSC recommendation for maximum performance
+**Mode Performance:**
+- Bulk Crap Uninstaller (désinstallation profonde)
+- Rytunex (optimisation système)
+- Recommandation Windows LTSC
 
-**Performance + Enhanced Style Mode:**
-- All performance tools
-- WinPaletter (Windows theming)
-- TranslucentTB (taskbar transparency)
-- Files App (modern file manager with taskbar pinning)
-- Lively Wallpaper (optional)
+**Mode Performance + Style:**
+- Tous les outils de performance
+- WinPaletter (thèmes Windows)
+- TranslucentTB (transparence taskbar)
+- Files App (gestionnaire de fichiers moderne)
+- Lively Wallpaper (optionnel)
 
-#### Device-Specific Tools
-- Steam Deck Tools (drivers & fan control)
-- Unowhy Tools (device-specific drivers)
-- KDE Connect (device connectivity)
+#### Outils Spécifiques
+- Steam Deck Tools (drivers et contrôle ventilateur)
+- Unowhy Tools (drivers spécifiques)
+- KDE Connect (connectivité appareils)
 
-#### LTSC/IoT Specific Features
-When LTSC/IoT edition is detected, additional options are presented:
-- Enable Microsoft Store
-- Install Notepad
-- Install Windows Terminal
-- Install Calculator
-- Install Camera app
-- Install Media Player
-- Install Photos app
+#### Options LTSC/IoT
+Lorsqu'une édition LTSC/IoT est détectée:
+- Activer Microsoft Store
+- Installer Notepad
+- Installer Windows Terminal
+- Installer Calculatrice
+- Installer Caméra
+- Installer Media Player
+- Installer Photos
 
-#### System Updates
-- Update all installed software via winget
+#### Mises à Jour
+- Mise à jour de tous les logiciels via winget
 
-## Usage
+## Déroulement du Script
 
-### Prerequisites
-- Windows 10 or Windows 11
-- PowerShell 5.1 or higher
-- Administrator privileges
-- Internet connection
+### 1. Phase de Détection
+- Détecte l'édition Windows
+- Affiche les informations système
 
-### Running the Script
+### 2. Phase de Configuration
+- Pose toutes les questions (Y/N)
+- Chaque option inclut une description
+- Collecte tous les choix avant de continuer
 
-1. **Open PowerShell as Administrator:**
-   - Press `Win + X`
-   - Select "Windows PowerShell (Admin)" or "Terminal (Admin)"
+### 3. Phase d'Installation
+- Traite toutes les installations sélectionnées
+- Affiche la progression pour chaque étape
+- Gère les erreurs avec élégance
 
-2. **Navigate to script directory:**
-   ```powershell
-   cd "c:\Users\Light\Downloads\setup-script"
-   ```
+### 4. Finalisation
+- Affiche le résumé
+- Propose un redémarrage système
 
-3. **Set execution policy (if needed):**
-   ```powershell
-   Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-   ```
+## Détails Techniques
 
-4. **Run the script:**
-   ```powershell
-   .\setup-windows.ps1
-   ```
+### Installation Office
 
-### Script Flow
+**Méthode Winget:**
+- Installation rapide via Windows Package Manager
+- Intégration automatique des mises à jour
 
-1. **Detection Phase**
-   - Detects Windows edition (LTSC/IoT or Standard)
-   - Displays system information
+**Téléchargement Direct:**
+- Télécharge depuis le CDN officiel Microsoft
+- Édition O365 ProPlus Retail
+- 64-bit, Anglais (US)
 
-2. **Configuration Phase**
-   - Asks all questions with Y/N prompts
-   - Each option includes description
-   - Collects all choices before proceeding
-
-3. **Installation Phase**
-   - Processes all selected installations
-   - Shows progress for each step
-   - Handles errors gracefully
-
-4. **Completion**
-   - Displays summary
-   - Offers system restart option
-
-## Features in Detail
-
-### Windows Edition Detection
-The script automatically detects:
-- Windows 10/11 LTSC editions
-- Windows 10 IoT Enterprise
-- Standard Windows editions
-
-This detection enables LTSC-specific features like Microsoft Store installation and default app additions.
-
-### Office Installation Methods
-
-**Winget Method:**
-- Fast installation via Windows Package Manager
-- Automatic updates integration
-
-**Direct Download:**
-- Downloads from official Microsoft CDN
-- O365 ProPlus Retail edition
-- 64-bit, English (US)
-
-### Activation
-Opens Microsoft Activation Scripts in a new PowerShell window with options to activate:
-- Windows only
-- Office only
-- Both Windows and Office
-
-### Performance Mode Tools
-
-**Bulk Crap Uninstaller:**
-- Deep uninstallation tool
-- Removes leftover files and registry entries
-- Auto-downloads latest release from GitHub
-
-**Rytunex:**
-- System optimization utility
-- Performance tweaks
-- Resource management
-
-### Enhanced Style Mode Tools
-
-**WinPaletter:**
-- Complete Windows theming solution
-- Customize colors, accents, and appearance
-
-**TranslucentTB:**
-- Taskbar transparency effects
-- Automatic from Microsoft Store
-
-**Files App:**
-- Modern file manager
-- Replaces Windows Explorer
-- Automatic taskbar pinning
-
-**Lively Wallpaper:**
-- Animated wallpaper engine
-- Video/GIF wallpaper support
-- Auto-downloads latest release
-
-### Latest Version Fetching
-The script automatically fetches latest versions from GitHub for:
+### Récupération des Versions
+Le script récupère automatiquement les dernières versions via GitHub API pour:
 - Bulk Crap Uninstaller
 - Lively Wallpaper
 - Steam Deck Tools
 - KDE Connect
 
-## Safety Features
+### Sécurité
+- Vérification des privilèges administrateur
+- Gestion complète des erreurs
+- Nettoyage automatique des fichiers temporaires
+- Choix par défaut sécurisés
 
-- Administrator privilege verification
-- Comprehensive error handling
-- Colored output for clarity (Info/Success/Warning/Error)
-- Automatic temp file cleanup
-- Safe default choices
+### Code Couleur
+- **Cyan** - Messages informatifs
+- **Vert** - Succès
+- **Jaune** - Avertissements et prompts
+- **Rouge** - Erreurs
 
-## Color Coding
+## Notes Importantes
 
-- **Cyan** - Informational messages
-- **Green** - Success messages
-- **Yellow** - Warnings and prompts
-- **Red** - Error messages
+- Certaines installations nécessitent des étapes manuelles (apps du Store)
+- L'épinglage de Files App à la barre des tâches est manuel
+- Le script d'activation s'ouvre dans une nouvelle fenêtre
+- Redémarrage recommandé après installation
+- Les utilisateurs LTSC doivent redémarrer après activation du Store
 
-## Notes
+## Dépannage
 
-- Some installations may require manual steps (e.g., Microsoft Store apps)
-- Files App pinning to taskbar requires manual action
-- Activation script opens in separate window
-- System restart recommended after completion
-- LTSC users may need to restart after enabling Microsoft Store
+**Le script ne s'exécute pas:**
+```powershell
+# Vérifier la politique d'exécution
+Get-ExecutionPolicy
 
-## Troubleshooting
+# Autoriser l'exécution
+Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
+```
 
-**Script won't run:**
-- Ensure you're running as Administrator
-- Check execution policy: `Get-ExecutionPolicy`
-- Use: `Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process`
+**Winget introuvable:**
+- Installer "App Installer" depuis le Microsoft Store
+- Ou télécharger depuis: https://github.com/microsoft/winget-cli
 
-**Winget not found:**
-- Install App Installer from Microsoft Store
-- Or download from: https://github.com/microsoft/winget-cli
+**Échecs de téléchargement:**
+- Vérifier la connexion internet
+- Vérifier les paramètres du pare-feu
+- Réessayer le script
 
-**Download failures:**
-- Check internet connection
-- Verify firewall settings
-- Try running script again
-
-**Store apps not installing:**
-- Ensure Microsoft Store is enabled (especially on LTSC)
-- Check Windows Update is working
-- Sign in to Microsoft account
+**Apps du Store ne s'installent pas:**
+- S'assurer que le Microsoft Store est activé (surtout sur LTSC)
+- Vérifier que Windows Update fonctionne
+- Se connecter avec un compte Microsoft
 
 ## Version
 
-**Current Version:** 1.0.0
+**Version Actuelle:** 1.0.0
 
-## Requirements
+## Licence
 
-- Windows 10 (1809+) or Windows 11
-- PowerShell 5.1+
-- Administrator rights
-- Active internet connection
-- Winget (App Installer) recommended
-
-## License
-
-This script is provided as-is for Windows system setup and configuration purposes.
+Ce script est fourni tel quel pour la configuration de systèmes Windows.
