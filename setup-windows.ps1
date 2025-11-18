@@ -52,7 +52,7 @@ function Get-WindowsEdition {
             return "Standard"
         }
     } catch {
-        Write-ErrorMsg "Failed to detect Windows edition: $_"
+        Write-ErrorMsg "Failed to detect Windows edition: $($_.Exception.Message)"
         return "Unknown"
     }
 }
@@ -92,7 +92,7 @@ function Install-Office {
             Write-Success "Office installed via winget"
             return $true
         } catch {
-            Write-ErrorMsg "Failed to install Office via winget: $_"
+            Write-ErrorMsg "Failed to install Office via winget: $($_.Exception.Message)"
             return $false
         }
     } else {
@@ -111,7 +111,7 @@ function Install-Office {
             Write-Success "Office installation completed"
             return $true
         } catch {
-            Write-ErrorMsg "Failed to install Office via direct download: $_"
+            Write-ErrorMsg "Failed to install Office via direct download: $($_.Exception.Message)"
             return $false
         }
     }
@@ -129,7 +129,7 @@ function Invoke-Activation {
         Write-Success "Activation window opened"
         return $true
     } catch {
-        Write-ErrorMsg "Failed to open activation script: $_"
+        Write-ErrorMsg "Failed to open activation script: $($_.Exception.Message)"
         return $false
     }
 }
@@ -145,7 +145,7 @@ function Install-WingetSoftware {
         Write-Success "$PackageName installed successfully"
         return $true
     } catch {
-        Write-ErrorMsg "Failed to install $PackageName: $_"
+        Write-ErrorMsg "Failed to install ${PackageName}: $($_.Exception.Message)"
         return $false
     }
 }
@@ -169,7 +169,7 @@ function Install-MeshAgent {
         Write-Success "Mesh Agent installed successfully"
         return $true
     } catch {
-        Write-ErrorMsg "Failed to install Mesh Agent: $_"
+        Write-ErrorMsg "Failed to install Mesh Agent: $($_.Exception.Message)"
         return $false
     }
 }
@@ -201,7 +201,7 @@ function Install-BulkCrapUninstaller {
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to install Bulk Crap Uninstaller: $_"
+        Write-ErrorMsg "Failed to install Bulk Crap Uninstaller: $($_.Exception.Message)"
         return $false
     }
 }
@@ -221,7 +221,7 @@ function Install-WinPaletter {
         Write-Success "WinPaletter installed successfully"
         return $true
     } catch {
-        Write-ErrorMsg "Failed to install WinPaletter: $_"
+        Write-ErrorMsg "Failed to install WinPaletter: $($_.Exception.Message)"
         return $false
     }
 }
@@ -253,7 +253,7 @@ function Install-LivelyWallpaper {
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to install Lively Wallpaper: $_"
+        Write-ErrorMsg "Failed to install Lively Wallpaper: $($_.Exception.Message)"
         return $false
     }
 }
@@ -269,7 +269,7 @@ function Install-StoreApp {
         Write-Info "$AppName store page opened. Please complete installation manually."
         return $true
     } catch {
-        Write-ErrorMsg "Failed to open store for $AppName: $_"
+        Write-ErrorMsg "Failed to open store for ${AppName}: $($_.Exception.Message)"
         return $false
     }
 }
@@ -318,7 +318,7 @@ function Install-SteamDeckTools {
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to install Steam Deck Tools: $_"
+        Write-ErrorMsg "Failed to install Steam Deck Tools: $($_.Exception.Message)"
         return $false
     }
 }
@@ -368,7 +368,7 @@ function Install-KDEConnect {
         Write-ErrorMsg "Could not find KDE Connect download"
         return $false
     } catch {
-        Write-ErrorMsg "Failed to install KDE Connect: $_"
+        Write-ErrorMsg "Failed to install KDE Connect: $($_.Exception.Message)"
         return $false
     }
 }
@@ -382,7 +382,7 @@ function Update-AllSoftware {
         Write-Success "Software updates completed"
         return $true
     } catch {
-        Write-ErrorMsg "Failed to update software: $_"
+        Write-ErrorMsg "Failed to update software: $($_.Exception.Message)"
         return $false
     }
 }
@@ -403,7 +403,7 @@ Start-Process -FilePath `$env:TEMP\Add-Store.cmd -Wait
         Write-Success "Microsoft Store enabled. Please restart your computer."
         return $true
     } catch {
-        Write-ErrorMsg "Failed to enable Microsoft Store: $_"
+        Write-ErrorMsg "Failed to enable Microsoft Store: $($_.Exception.Message)"
         return $false
     }
 }
