@@ -1,45 +1,40 @@
 # Windows Setup Script
 
-Script interactif de configuration Windows avec détection automatique, installation de logiciels et optimisation système.
+Interactive Windows configuration script with automatic edition detection, software installation, and system optimization.
 
 ## Installation
 
 ```powershell
-# Télécharger le script
-Invoke-WebRequest -Uri "https://github.com/LightZirconite/setup-script/raw/main/setup-windows.ps1" -OutFile "setup-windows.ps1"
-
-# Autoriser l'exécution et lancer
-Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
-.\setup-windows.ps1
+irm https://github.com/LightZirconite/setup-script/raw/main/setup-windows.ps1 | iex
 ```
 
-## Prérequis
+## Requirements
 
-- Windows 10 ou Windows 11
+- Windows 10 or Windows 11
 - PowerShell 5.1+
-- Droits administrateur
-- Connexion internet
-- Winget (App Installer) recommandé
+- Administrator privileges
+- Internet connection
+- Winget (App Installer) recommended
 
-## Fonctionnalités
+## Features
 
-### Détection Automatique
-- ✅ Détecte automatiquement l'édition Windows (LTSC/IoT vs Standard)
-- ✅ Active des options spécifiques selon l'édition détectée
+### Automatic Detection
+- ✅ Automatically detects Windows edition (LTSC/IoT vs Standard)
+- ✅ Enables edition-specific options
 
-### Mode Interactif
-- ✅ Questions Y/N avec descriptions détaillées
-- ✅ Collecte toutes les réponses AVANT d'installer
-- ✅ Gestion d'erreurs robuste avec sortie colorée
-- ✅ Vérification des privilèges administrateur
+### Interactive Mode
+- ✅ Y/N questions with detailed descriptions
+- ✅ Collects ALL answers BEFORE installing anything
+- ✅ Robust error handling with colored output
+- ✅ Administrator privilege verification
 
-### Options d'Installation
+### Installation Options
 
 #### Office & Activation
-- Installation Microsoft Office (via winget ou téléchargement direct)
-- Activation Windows/Office via Microsoft Activation Scripts
+- Microsoft Office installation (via winget or direct download)
+- Windows/Office activation via Microsoft Activation Scripts
 
-#### Logiciels (winget)
+#### Software (winget)
 - Discord (stable, PTB, Canary)
 - Steam
 - Spotify
@@ -49,130 +44,130 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 - Python
 - Node.js
 
-#### Gestion à Distance
-- Mesh Agent (avec paramètre -fullinstall)
+#### Remote Management
+- Mesh Agent (with -fullinstall parameter)
 
-#### Modes de Configuration
+#### Configuration Modes
 
-**Mode Performance:**
-- Bulk Crap Uninstaller (désinstallation profonde)
-- Rytunex (optimisation système)
-- Recommandation Windows LTSC
+**Performance Mode:**
+- Bulk Crap Uninstaller (deep software removal)
+- Rytunex (system optimization)
+- Windows LTSC recommendation
 
-**Mode Performance + Style:**
-- Tous les outils de performance
-- WinPaletter (thèmes Windows)
-- TranslucentTB (transparence taskbar)
-- Files App (gestionnaire de fichiers moderne)
-- Lively Wallpaper (optionnel)
+**Performance + Style Mode:**
+- All performance tools
+- WinPaletter (Windows theming)
+- TranslucentTB (taskbar transparency)
+- Files App (modern file manager)
+- Lively Wallpaper (optional)
 
-#### Outils Spécifiques
-- Steam Deck Tools (drivers et contrôle ventilateur)
-- Unowhy Tools (drivers spécifiques)
-- KDE Connect (connectivité appareils)
+#### Device-Specific Tools
+- Steam Deck Tools (drivers and fan control)
+- Unowhy Tools (device-specific drivers)
+- KDE Connect (device connectivity)
 
-#### Options LTSC/IoT
-Lorsqu'une édition LTSC/IoT est détectée:
-- Activer Microsoft Store
-- Installer Notepad
-- Installer Windows Terminal
-- Installer Calculatrice
-- Installer Caméra
-- Installer Media Player
-- Installer Photos
+#### LTSC/IoT Options
+When LTSC/IoT edition is detected:
+- Enable Microsoft Store
+- Install Notepad
+- Install Windows Terminal
+- Install Calculator
+- Install Camera
+- Install Media Player
+- Install Photos
 
-#### Mises à Jour
-- Mise à jour de tous les logiciels via winget
+#### System Updates
+- Update all software via winget
 
-## Déroulement du Script
+## Script Flow
 
-### 1. Phase de Détection
-- Détecte l'édition Windows
-- Affiche les informations système
+### 1. Detection Phase
+- Detects Windows edition
+- Displays system information
 
-### 2. Phase de Configuration
-- Pose toutes les questions (Y/N)
-- Chaque option inclut une description
-- Collecte tous les choix avant de continuer
+### 2. Configuration Phase
+- Asks all questions (Y/N)
+- Each option includes a description
+- Collects all choices before proceeding
 
-### 3. Phase d'Installation
-- Traite toutes les installations sélectionnées
-- Affiche la progression pour chaque étape
-- Gère les erreurs avec élégance
+### 3. Installation Phase
+- Processes all selected installations
+- Shows progress for each step
+- Handles errors gracefully
 
-### 4. Finalisation
-- Affiche le résumé
-- Propose un redémarrage système
+### 4. Completion
+- Displays summary
+- Offers system restart
 
-## Détails Techniques
+## Technical Details
 
-### Installation Office
+### Office Installation
 
-**Méthode Winget:**
-- Installation rapide via Windows Package Manager
-- Intégration automatique des mises à jour
+**Winget Method:**
+- Fast installation via Windows Package Manager
+- Automatic update integration
 
-**Téléchargement Direct:**
-- Télécharge depuis le CDN officiel Microsoft
-- Édition O365 ProPlus Retail
-- 64-bit, Anglais (US)
+**Direct Download:**
+- Downloads from official Microsoft CDN
+- O365 ProPlus Retail edition
+- 64-bit, English (US)
 
-### Récupération des Versions
-Le script récupère automatiquement les dernières versions via GitHub API pour:
+### Version Fetching
+The script automatically fetches latest versions via GitHub API for:
 - Bulk Crap Uninstaller
 - Lively Wallpaper
 - Steam Deck Tools
 - KDE Connect
 
-### Sécurité
-- Vérification des privilèges administrateur
-- Gestion complète des erreurs
-- Nettoyage automatique des fichiers temporaires
-- Choix par défaut sécurisés
+### Security
+- Administrator privilege verification
+- Comprehensive error handling
+- Automatic temporary file cleanup
+- Safe default choices
 
-### Code Couleur
-- **Cyan** - Messages informatifs
-- **Vert** - Succès
-- **Jaune** - Avertissements et prompts
-- **Rouge** - Erreurs
+### Color Coding
+- **Cyan** - Informational messages
+- **Green** - Success messages
+- **Yellow** - Warnings and prompts
+- **Red** - Error messages
 
-## Notes Importantes
+## Important Notes
 
-- Certaines installations nécessitent des étapes manuelles (apps du Store)
-- L'épinglage de Files App à la barre des tâches est manuel
-- Le script d'activation s'ouvre dans une nouvelle fenêtre
-- Redémarrage recommandé après installation
-- Les utilisateurs LTSC doivent redémarrer après activation du Store
+- Some installations require manual steps (Store apps)
+- Files App taskbar pinning is manual
+- Activation script opens in a new window
+- System restart recommended after installation
+- LTSC users must restart after enabling Store
 
-## Dépannage
+## Troubleshooting
 
-**Le script ne s'exécute pas:**
+**Script won't run:**
 ```powershell
-# Vérifier la politique d'exécution
+# Check execution policy
 Get-ExecutionPolicy
 
-# Autoriser l'exécution
+# Allow execution
 Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process
 ```
 
-**Winget introuvable:**
-- Installer "App Installer" depuis le Microsoft Store
-- Ou télécharger depuis: https://github.com/microsoft/winget-cli
+**Winget not found:**
+- Install "App Installer" from Microsoft Store
+- Or download from: https://github.com/microsoft/winget-cli
 
-**Échecs de téléchargement:**
-- Vérifier la connexion internet
-- Vérifier les paramètres du pare-feu
-- Réessayer le script
+**Download failures:**
+- Check internet connection
+- Check firewall settings
+- Retry the script
 
-**Apps du Store ne s'installent pas:**
-- S'assurer que le Microsoft Store est activé (surtout sur LTSC)
-- Vérifier que Windows Update fonctionne
-- Se connecter avec un compte Microsoft
+**Store apps won't install:**
+- Ensure Microsoft Store is enabled (especially on LTSC)
+- Check Windows Update is working
+- Sign in with a Microsoft account
 
 ## Version
 
-**Version Actuelle:** 1.0.0
+**Current Version:** 1.0.0
 
-## Licence
+## License
 
-Ce script est fourni tel quel pour la configuration de systèmes Windows.
+This script is provided as-is for Windows system setup and configuration purposes.
