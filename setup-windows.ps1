@@ -16,6 +16,10 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     exit
 }
 
+# Set console encoding to UTF-8 for proper character display
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$OutputEncoding = [System.Text.Encoding]::UTF8
+
 # Color output functions
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
@@ -25,10 +29,10 @@ function Write-ErrorMsg { param($Message) Write-Host "[ERROR] $Message" -Foregro
 # Banner
 function Show-Banner {
     Write-Host @"
-╔═══════════════════════════════════════════════════════════╗
-║          Windows Setup & Configuration Script            ║
-║                     Version 1.0.0                         ║
-╚═══════════════════════════════════════════════════════════╝
+================================================================
+          Windows Setup & Configuration Script
+                     Version 1.0.0
+================================================================
 "@ -ForegroundColor Cyan
     Write-Host ""
 }
@@ -70,12 +74,12 @@ function Get-YesNoChoice {
     )
     
     Write-Host ""
-    Write-Host "═══════════════════════════════════════════" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Yellow
     Write-Host $Title -ForegroundColor White
     if ($Description) {
         Write-Host $Description -ForegroundColor Gray
     }
-    Write-Host "═══════════════════════════════════════════" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Yellow
     
     do {
         $choice = Read-Host "Your choice (Y/N)"
@@ -426,9 +430,9 @@ function Start-Setup {
     $choices = @{}
     
     Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
-    Write-Host "  CONFIGURATION PHASE - Please answer all questions first  " -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host "  CONFIGURATION PHASE - Please answer all questions first      " -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
     Write-Host ""
     
     # Question 1: Install Office
@@ -484,7 +488,7 @@ function Start-Setup {
     
     # Question 15: Setup Mode
     Write-Host ""
-    Write-Host "═══════════════════════════════════════════" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Yellow
     Write-Host "Choose PC Setup Mode:" -ForegroundColor White
     Write-Host "1. Performance mode only" -ForegroundColor White
     Write-Host "   - Bulk Crap Uninstaller (deep software removal)" -ForegroundColor Gray
@@ -496,7 +500,7 @@ function Start-Setup {
     Write-Host "   - TranslucentTB (taskbar transparency)" -ForegroundColor Gray
     Write-Host "   - Files App (modern file manager)" -ForegroundColor Gray
     Write-Host "   - Optional: Lively Wallpaper" -ForegroundColor Gray
-    Write-Host "═══════════════════════════════════════════" -ForegroundColor Yellow
+    Write-Host "============================================" -ForegroundColor Yellow
     
     do {
         $setupMode = Read-Host "Enter choice (1-2)"
@@ -520,9 +524,9 @@ function Start-Setup {
     # LTSC-specific questions
     if ($windowsEdition -eq "LTSC") {
         Write-Host ""
-        Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Magenta
-        Write-Host "     LTSC/IoT Edition Detected - Additional Options        " -ForegroundColor Magenta
-        Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Magenta
+        Write-Host "================================================================" -ForegroundColor Magenta
+        Write-Host "     LTSC/IoT Edition Detected - Additional Options            " -ForegroundColor Magenta
+        Write-Host "================================================================" -ForegroundColor Magenta
         Write-Host ""
         
         $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Enable Microsoft Store?" -Description "Adds Microsoft Store to LTSC/IoT editions"
@@ -536,9 +540,9 @@ function Start-Setup {
     
     # Installation Phase
     Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
-    Write-Host "       INSTALLATION PHASE - Processing your choices         " -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host "       INSTALLATION PHASE - Processing your choices            " -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
     Write-Host ""
     
     Start-Sleep -Seconds 2
@@ -637,9 +641,9 @@ function Start-Setup {
     
     # Completion
     Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
-    Write-Host "               Setup Completed Successfully!                " -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════════════════════════" -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
+    Write-Host "               Setup Completed Successfully!                    " -ForegroundColor Green
+    Write-Host "================================================================" -ForegroundColor Green
     Write-Host ""
     Write-Success "All selected components have been installed/configured."
     Write-Info "Some applications may require a system restart to function properly."
