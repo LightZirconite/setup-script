@@ -1,5 +1,3 @@
-#Requires -RunAsAdministrator
-
 <#
 .SYNOPSIS
     Windows Setup and Configuration Script
@@ -10,6 +8,13 @@
     Author: Setup Script
     Requires: PowerShell 5.1+ running as Administrator
 #>
+
+# Auto-elevation: Request admin rights if not already running as admin
+if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
+    Write-Host "Requesting administrator privileges..." -ForegroundColor Yellow
+    Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+    exit
+}
 
 # Color output functions
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
@@ -411,12 +416,6 @@ Start-Process -FilePath `$env:TEMP\Add-Store.cmd -Wait
 # Main Script Execution
 function Start-Setup {
     Show-Banner
-    
-    if (-not (Test-IsAdmin)) {
-        Write-ErrorMsg "This script must be run as Administrator!"
-        Read-Host "Press Enter to exit"
-        exit 1
-    }
     
     # Detect Windows Edition
     Write-Info "Step 1: Detecting Windows Edition..."
