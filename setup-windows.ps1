@@ -227,6 +227,17 @@ function Install-Winget {
 
 # Install Office function
 function Install-Office {
+    Write-Info "Checking Microsoft Office status..."
+    
+    # Check for existing Office installation (Click-to-Run)
+    $officePath = "$env:ProgramFiles\Microsoft Office\root\Office16\WINWORD.EXE"
+    $officePathx86 = "${env:ProgramFiles(x86)}\Microsoft Office\root\Office16\WINWORD.EXE"
+    
+    if ((Test-Path $officePath) -or (Test-Path $officePathx86)) {
+        Write-Info "Microsoft Office appears to be already installed. Skipping."
+        return $true
+    }
+
     Write-Info "Installing Microsoft Office..."
     
     try {
@@ -237,14 +248,14 @@ function Install-Office {
         Write-Info "Downloading Office setup..."
         Invoke-WebRequest -Uri $officeUrl -OutFile $setupFile -UseBasicParsing
         
-        Write-Info "Executing Office setup..."
-        Start-Process -FilePath $setupFile -Wait
+        Write-Info "Launching Office setup in background..."
+        # Removed -Wait so the script continues while Office installs
+        Start-Process -FilePath $setupFile
         
-        Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-        Write-Success "Office installation completed"
+        Write-Success "Office installer launched. It will continue in the background."
         return $true
     } catch {
-        Write-ErrorMsg "Failed to install Office: $($_.Exception.Message)"
+        Write-ErrorMsg "Failed to launch Office setup: $($_.Exception.Message)"
         return $false
     }
 }
