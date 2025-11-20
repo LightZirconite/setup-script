@@ -294,9 +294,13 @@ function Test-IsInstalled {
     return ($process.ExitCode -eq 0)
 }
 
-# Install software via winget
+# Install software via winget with optional fallback URL
 function Install-WingetSoftware {
-    param([string]$PackageName, [string]$WingetId)
+    param(
+        [string]$PackageName, 
+        [string]$WingetId,
+        [string]$FallbackUrl = ""
+    )
     
     if (Test-IsInstalled -WingetId $WingetId) {
         Write-Info "$PackageName is already installed. Skipping."
@@ -312,11 +316,32 @@ function Install-WingetSoftware {
         if ($process.ExitCode -eq 0) {
             Write-Host " [OK]" -ForegroundColor Green
             return $true
-        } elseif ($process.ExitCode -eq -2143309565) { # 0x803fb103
-            Write-Host " [FAILED]" -ForegroundColor Red
-            Write-Warning "Not compatible with this Windows edition (LTSC/IoT) or missing dependencies."
-            return $false
         } else {
+            # Winget failed, check for fallback
+            if ($FallbackUrl) {
+                Write-Host " [WINGET FAILED]" -ForegroundColor Yellow
+                Write-Info "Winget installation failed. Attempting direct download..."
+                
+                $tempPath = [System.IO.Path]::GetTempPath()
+                $fileName = "$($PackageName -replace ' ','').exe"
+                $dlPath = Join-Path $tempPath $fileName
+                
+                try {
+                    Write-Info "Downloading from vendor..."
+                    Invoke-WebRequest -Uri $FallbackUrl -OutFile $dlPath -UseBasicParsing
+                    
+                    Write-Info "Installing $PackageName..."
+                    Start-Process -FilePath $dlPath -Wait
+                    
+                    Write-Success "$PackageName installed via direct download."
+                    Remove-Item $dlPath -Force -ErrorAction SilentlyContinue
+                    return $true
+                } catch {
+                    Write-ErrorMsg "Direct download failed: $($_.Exception.Message)"
+                    return $false
+                }
+            }
+            
             Write-Host " [FAILED]" -ForegroundColor Red
             Write-ErrorMsg "Exit code: $($process.ExitCode)"
             return $false
@@ -816,7 +841,7 @@ function Start-Setup {
         @{Name="Discord"; Id="Discord.Discord"; Desc="Voice, video, and text communication platform"},
         @{Name="Steam"; Id="Valve.Steam"; Desc="Gaming platform and store"},
         @{Name="Spotify"; Id="Spotify.Spotify"; Desc="Music streaming service"},
-        @{Name="Terminus"; Id="Eugeny.Terminus"; Desc="Modern terminal emulator"},
+        @{Name="Termius"; Id="Eugeny.Termius"; Desc="Modern terminal emulator"; Fallback="https://autoupdate.termius.com/windows/Install%20Termius.exe"},
         @{Name="Visual Studio Code"; Id="Microsoft.VisualStudioCode"; Desc="Code editor"},
         @{Name="Discord PTB"; Id="Discord.Discord.PTB"; Desc="Discord Public Test Build"},
         @{Name="Discord Canary"; Id="Discord.Discord.Canary"; Desc="Discord Canary (experimental features)"},
@@ -960,7 +985,10 @@ function Start-Setup {
     foreach ($software in $softwareList) {
         $key = "Install$($software.Name -replace '\s','')"
         if ($choices.$key) {
-            $result = Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id
+            # Pass Fallback URL if it exists
+            $fallback = if ($software.Fallback) { $software.Fallback } else { "" }
+            $result = Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id -FallbackUrl $fallback
+            
             if ($software.Name -eq "Spotify" -and $result) {
                 $spotifyInstalled = $true
             }
