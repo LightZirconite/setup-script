@@ -20,7 +20,11 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 $OutputEncoding = [System.Text.Encoding]::UTF8
 
-# Color output functions
+# Ensure TLS 1.2 is enabled for web requests (fixes GitHub download issues)
+# Ensure TLS 1.2 and 1.3 are enabled for web requests
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+
+# Set console encoding to UTF-8 for proper character display
 function Write-Info { param($Message) Write-Host "[INFO] $Message" -ForegroundColor Cyan }
 function Write-Success { param($Message) Write-Host "[SUCCESS] $Message" -ForegroundColor Green }
 function Write-Warning { param($Message) Write-Host "[WARNING] $Message" -ForegroundColor Yellow }
@@ -81,6 +85,59 @@ function Get-YesNoChoice {
     } while ($choice -ne "Y" -and $choice -ne "N")
     
     return $choice -eq "Y"
+}
+
+# Install Winget and dependencies (Frameworks)
+function Install-Winget {
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Write-Info "Winget is already installed."
+        return $true
+    }
+
+    Write-Info "Winget not found. Installing Winget and required frameworks..."
+    
+    $tempPath = [System.IO.Path]::GetTempPath()
+    
+    try {
+        # 1. Install VCLibs (Framework)
+        Write-Info "Downloading and installing VCLibs (Framework)..."
+        $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        $vcLibsPath = Join-Path $tempPath "Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
+        Add-AppxPackage -Path $vcLibsPath
+        
+        # 2. Install UI Xaml (Framework)
+        Write-Info "Downloading and installing UI Xaml (Framework)..."
+        # Using a known stable version of UI Xaml 2.7
+        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.7.3/Microsoft.UI.Xaml.2.7.x64.appx"
+        $uiXamlPath = Join-Path $tempPath "Microsoft.UI.Xaml.2.7.x64.appx"
+        Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
+        Add-AppxPackage -Path $uiXamlPath
+
+        # 3. Install Winget (DesktopAppInstaller)
+        Write-Info "Downloading and installing Winget..."
+        $latestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/microsoft/winget-cli/releases/latest" -UseBasicParsing
+        $wingetAsset = $latestRelease.assets | Where-Object { $_.name -like "*.msixbundle" } | Select-Object -First 1
+        
+        if ($wingetAsset) {
+            $wingetPath = Join-Path $tempPath $wingetAsset.name
+            Invoke-WebRequest -Uri $wingetAsset.browser_download_url -OutFile $wingetPath -UseBasicParsing
+            Add-AppxPackage -Path $wingetPath
+            Write-Success "Winget and frameworks installed successfully."
+            
+            # Clean up
+            Remove-Item $vcLibsPath -ErrorAction SilentlyContinue
+            Remove-Item $uiXamlPath -ErrorAction SilentlyContinue
+            Remove-Item $wingetPath -ErrorAction SilentlyContinue
+            return $true
+        } else {
+            Write-ErrorMsg "Could not find Winget download link."
+            return $false
+        }
+    } catch {
+        Write-ErrorMsg "Failed to install Winget/Frameworks: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # Install Office function
@@ -147,7 +204,7 @@ function Install-WingetSoftware {
             Write-Success "$PackageName installed successfully"
             return $true
         } elseif ($process.ExitCode -eq -2143309565) { # 0x803fb103
-            Write-Warning "Skipping $PackageName: Not compatible with this Windows edition (LTSC/IoT) without full Store support."
+            Write-Warning "Skipping ${PackageName}: Not compatible with this Windows edition (LTSC/IoT) without full Store support."
             return $false
         } else {
             Write-ErrorMsg "Failed to install ${PackageName}. Exit code: $($process.ExitCode)"
@@ -197,6 +254,12 @@ function Install-Rytunex {
     $rytunexPath = "$env:ProgramFiles\RyTuneX\RyTuneX.exe"
     if (Test-Path $rytunexPath) {
         Write-Info "Rytunex detected at $rytunexPath. Skipping..."
+        return $true
+    }
+    
+    # Check if installed via Winget
+    if (Test-IsInstalled -WingetId "Rayen.RyTuneX") {
+        Write-Info "Rytunex is already installed via Winget. Skipping..."
         return $true
     }
 
@@ -303,17 +366,43 @@ function Install-KDEConnect {
 
 # Update all software
 function Update-AllSoftware {
-    Write-Info "Updating all installed software via winget..."
+    Write-Info "Checking for available updates..."
     
-    # Close common apps to prevent update failures (Exit code 23)
-    Write-Info "Closing common applications to ensure smooth updates..."
-    $appsToClose = @("Spotify", "Discord", "Steam", "Firefox", "chrome", "msedge", "Code")
-    foreach ($app in $appsToClose) {
-        Stop-Process -Name $app -Force -ErrorAction SilentlyContinue
+    # Get list of available updates first to avoid closing apps unnecessarily
+    $upgradeList = winget upgrade --include-unknown | Out-String
+    
+    if ($upgradeList -match "No installed package found" -or ($upgradeList -notmatch "Name\s+Id\s+Version" -and $upgradeList -notmatch "Nom\s+Id\s+Version")) {
+        Write-Success "No updates available."
+        return $true
+    }
+
+    Write-Info "Updates found. Preparing to update..."
+
+    # Map common process names to their likely Winget names/IDs for smarter closing
+    # Key = Process Name, Value = String to match in winget output
+    $processMap = @{
+        "Spotify" = "Spotify";
+        "Discord" = "Discord";
+        "Steam" = "Steam";
+        "firefox" = "Firefox";
+        "chrome" = "Google Chrome";
+        "msedge" = "Microsoft Edge";
+        "Code" = "Visual Studio Code"
+    }
+
+    foreach ($procName in $processMap.Keys) {
+        $wingetMatch = $processMap[$procName]
+        # Check if the app is in the update list
+        if ($upgradeList -match $wingetMatch) {
+            if (Get-Process -Name $procName -ErrorAction SilentlyContinue) {
+                Write-Info "Closing $procName to allow update..."
+                Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+            }
+        }
     }
     
     try {
-        winget upgrade --all --accept-package-agreements --accept-source-agreements
+        winget upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown
         Write-Success "Software updates completed"
         return $true
     } catch {
@@ -327,16 +416,46 @@ function Enable-MicrosoftStore {
     Write-Info "Enabling Microsoft Store on LTSC..."
     
     try {
-        $script = @"
-`$progressPreference = 'silentlyContinue'
-Write-Information "Downloading LTSC Add Store..."
-Invoke-WebRequest -Uri https://github.com/kkkgo/LTSC-Add-MicrosoftStore/releases/latest/download/Add-Store.cmd -OutFile `$env:TEMP\Add-Store.cmd
-Write-Information "Installing Microsoft Store..."
-Start-Process -FilePath `$env:TEMP\Add-Store.cmd -Wait
-"@
-        Invoke-Expression $script
-        Write-Success "Microsoft Store enabled. Please restart your computer."
-        return $true
+        Write-Info "Attempting native Store installation via wsreset..."
+        
+        # Method 1: Native wsreset -i command (Works on newer LTSC builds)
+        # Using Start-Process with full path to avoid path issues
+        $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
+        if (Test-Path $wsresetPath) {
+            # Redirect output to null to hide potential ClipRenew errors which are harmless here
+            Start-Process -FilePath $wsresetPath -ArgumentList "-i" -NoNewWindow -Wait -RedirectStandardOutput $null -RedirectStandardError $null
+        } else {
+            Write-Warning "wsreset.exe not found in System32."
+        }
+        
+        Write-Info "Waiting for Store installation to complete..."
+        # Wait loop to check if Store appears
+        $timeout = 60 # seconds
+        $timer = 0
+        while ($timer -lt $timeout) {
+            if (Get-AppxPackage -Name Microsoft.WindowsStore) {
+                Write-Success "Microsoft Store installed successfully via native method."
+                return $true
+            }
+            Start-Sleep -Seconds 2
+            $timer += 2
+            Write-Host "." -NoNewline -ForegroundColor Gray
+        }
+        Write-Host ""
+
+        # Method 2: Fallback to manual registration if wsreset failed
+        Write-Warning "Native installation timed out. Trying manual registration..."
+        
+        $storeManifest = "C:\Program Files\WindowsApps\Microsoft.WindowsStore*\AppxManifest.xml"
+        if (Test-Path $storeManifest) {
+            Add-AppxPackage -DisableDevelopmentMode -Register $storeManifest
+            Write-Success "Microsoft Store registered manually."
+            return $true
+        } else {
+            Write-ErrorMsg "Could not find Store files to register. Please ensure your Windows version supports this."
+            return $false
+        }
+
     } catch {
         Write-ErrorMsg "Failed to enable Microsoft Store: $($_.Exception.Message)"
         return $false
@@ -350,6 +469,10 @@ function Start-Setup {
     $windowsEdition = $osData.Type
     
     Show-Banner
+    
+    # Ensure Winget and Frameworks are installed immediately
+    Install-Winget
+
     Write-Host "Detected System: $($osData.Name)" -ForegroundColor Cyan
     if ($windowsEdition -eq "LTSC") {
         Write-Host "Edition Type: LTSC/IoT (Additional options enabled)" -ForegroundColor Yellow
@@ -371,7 +494,7 @@ function Start-Setup {
     $choices.InstallOffice = Get-YesNoChoice -Title "Install Microsoft Office?" -Description "Microsoft Office suite (Word, Excel, PowerPoint, etc.)"
     
     # Question 2: Activate Windows/Office
-    $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office?" -Description "Opens Microsoft Activation Scripts (MAS) for activation"
+    $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office / Extend Updates?" -Description "Opens Microsoft Activation Scripts (MAS) for activation and Windows 10 Extended Security Updates (ESU)"
     
     # Question 3: KDE Connect (asked early in sequence)
     $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
@@ -537,15 +660,30 @@ function Start-Setup {
     
     # LTSC-specific installations
     if ($windowsEdition -eq "LTSC") {
+        $storeEnabledSuccessfully = $false
+        
         if ($choices.EnableMicrosoftStore) {
-            Enable-MicrosoftStore
+            $storeEnabledSuccessfully = Enable-MicrosoftStore
         }
         
         # Check if Store infrastructure is likely available
-        $storeAvailable = (Get-AppxPackage -Name Microsoft.WindowsStore) -or $choices.EnableMicrosoftStore
+        # It is available if it was already there OR if we just successfully enabled it
+        $isStoreInstalled = Get-AppxPackage -Name Microsoft.WindowsStore
+        $storeAvailable = $isStoreInstalled -or $storeEnabledSuccessfully
         
         if ($storeAvailable) {
+            if ($storeEnabledSuccessfully) {
+                Write-Info "Waiting for Store registration to settle..."
+                Start-Sleep -Seconds 10
+            }
+
+            # Force source update for msstore
+            Write-Info "Refreshing Winget sources..."
+            winget source update --name msstore
+
             if ($choices.InstallNotepad) {
+                # Try installing via ID first, then fallback to name if needed
+                # Using --accept-source-agreements to bypass prompts
                 Install-WingetSoftware -PackageName "Notepad" -WingetId "9MSMLRH6LZF3"
             }
             
