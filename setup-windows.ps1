@@ -15,11 +15,15 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     
     if ($PSCommandPath) {
         Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+        Write-Host "Closing original window in 10 seconds..." -ForegroundColor Gray
+        Start-Sleep -Seconds 10
         exit
     } else {
         # If running via IEX/Pipe, relaunch the download command as admin
         # Added -NoExit so the new window stays open (useful for debugging or seeing completion)
         Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/LightZirconite/setup-script/main/setup-windows.ps1 | iex`"" -Verb RunAs
+        Write-Host "Closing original window in 10 seconds..." -ForegroundColor Gray
+        Start-Sleep -Seconds 10
         return # Use return instead of exit to avoid closing the original terminal
     }
 }
@@ -249,11 +253,17 @@ function Install-Office {
         Invoke-WebRequest -Uri $officeUrl -OutFile $setupFile -UseBasicParsing
         
         Write-Info "Launching Office setup in background..."
-        # Removed -Wait so the script continues while Office installs
-        Start-Process -FilePath $setupFile
         
-        Write-Success "Office installer launched. It will continue in the background."
-        return $true
+        # Use Start-Process with explicit arguments to ensure it launches correctly
+        # Added -PassThru to verify process creation
+        $proc = Start-Process -FilePath $setupFile -PassThru
+        
+        if ($proc.Id) {
+            Write-Success "Office installer launched (PID: $($proc.Id)). It will continue in the background."
+            return $true
+        } else {
+            throw "Process failed to start."
+        }
     } catch {
         Write-ErrorMsg "Failed to launch Office setup: $($_.Exception.Message)"
         return $false
@@ -263,12 +273,12 @@ function Install-Office {
 # Activate Windows/Office
 function Invoke-Activation {
     Write-Info "Opening Microsoft Activation Scripts (MAS)..."
-    Write-Warning "A new PowerShell window will open. Please select your activation option there."
+    Write-Warning "Activation is running in the background (Hidden Window)."
     
     try {
-        # Removed -WindowStyle Hidden to ensure the user can see and interact with the MAS window
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", "irm https://get.activated.win | iex" -Verb RunAs
-        Write-Success "Activation window opened"
+        # Added -WindowStyle Hidden as requested to make it invisible
+        Start-Process powershell -ArgumentList "-WindowStyle Hidden", "-Command", "irm https://get.activated.win | iex" -Verb RunAs -WindowStyle Hidden
+        Write-Success "Activation script launched silently."
         return $true
     } catch {
         Write-ErrorMsg "Failed to open activation script: $($_.Exception.Message)"
