@@ -108,9 +108,9 @@ function Install-Winget {
         
         # 2. Install UI Xaml (Framework)
         Write-Info "Downloading and installing UI Xaml (Framework)..."
-        # Using a known stable version of UI Xaml 2.7
-        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.7.3/Microsoft.UI.Xaml.2.7.x64.appx"
-        $uiXamlPath = Join-Path $tempPath "Microsoft.UI.Xaml.2.7.x64.appx"
+        # Using UI Xaml 2.8 which is required for newer apps (like Notepad)
+        $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
+        $uiXamlPath = Join-Path $tempPath "Microsoft.UI.Xaml.2.8.x64.appx"
         Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
         Add-AppxPackage -Path $uiXamlPath
 
@@ -170,7 +170,8 @@ function Invoke-Activation {
     Write-Warning "A new PowerShell window will open. Please select your activation option there."
     
     try {
-        Start-Process powershell -ArgumentList "-NoExit", "-WindowStyle", "Hidden", "-Command", "irm https://get.activated.win | iex" -Verb RunAs
+        # Removed -WindowStyle Hidden to ensure the user can see and interact with the MAS window
+        Start-Process powershell -ArgumentList "-NoExit", "-Command", "irm https://get.activated.win | iex" -Verb RunAs
         Write-Success "Activation window opened"
         return $true
     } catch {
@@ -182,7 +183,8 @@ function Invoke-Activation {
 # Check if software is installed via winget
 function Test-IsInstalled {
     param([string]$WingetId)
-    $process = Start-Process winget -ArgumentList "list --id $WingetId --exact --accept-source-agreements" -NoNewWindow -PassThru -Wait
+    # Run silently with Hidden window style
+    $process = Start-Process winget -ArgumentList "list --id $WingetId --exact --accept-source-agreements" -WindowStyle Hidden -PassThru -Wait
     return ($process.ExitCode -eq 0)
 }
 
@@ -191,27 +193,31 @@ function Install-WingetSoftware {
     param([string]$PackageName, [string]$WingetId)
     
     if (Test-IsInstalled -WingetId $WingetId) {
-        Write-Info "$PackageName is already installed. Skipping..."
+        Write-Info "$PackageName is already installed. Skipping."
         return $true
     }
 
-    Write-Info "Installing $PackageName via winget..."
+    Write-Host "[INFO] Installing $PackageName..." -NoNewline -ForegroundColor Cyan
     
     try {
-        $process = Start-Process winget -ArgumentList "install --id $WingetId --accept-package-agreements --accept-source-agreements --silent" -NoNewWindow -PassThru -Wait
+        # Use -WindowStyle Hidden to keep it clean
+        $process = Start-Process winget -ArgumentList "install --id $WingetId --accept-package-agreements --accept-source-agreements --silent --force" -WindowStyle Hidden -PassThru -Wait
         
         if ($process.ExitCode -eq 0) {
-            Write-Success "$PackageName installed successfully"
+            Write-Host " [OK]" -ForegroundColor Green
             return $true
         } elseif ($process.ExitCode -eq -2143309565) { # 0x803fb103
-            Write-Warning "Skipping ${PackageName}: Not compatible with this Windows edition (LTSC/IoT) without full Store support."
+            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-Warning "Not compatible with this Windows edition (LTSC/IoT) or missing dependencies."
             return $false
         } else {
-            Write-ErrorMsg "Failed to install ${PackageName}. Exit code: $($process.ExitCode)"
+            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-ErrorMsg "Exit code: $($process.ExitCode)"
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to execute winget for ${PackageName}: $($_.Exception.Message)"
+        Write-Host " [FAILED]" -ForegroundColor Red
+        Write-ErrorMsg "Exception: $($_.Exception.Message)"
         return $false
     }
 }
@@ -250,11 +256,18 @@ function Install-BulkCrapUninstaller {
 function Install-Rytunex {
     Write-Info "Installing Rytunex (system optimization tool)..."
     
-    # Check if already installed via file path (common location)
-    $rytunexPath = "$env:ProgramFiles\RyTuneX\RyTuneX.exe"
-    if (Test-Path $rytunexPath) {
-        Write-Info "Rytunex detected at $rytunexPath. Skipping..."
-        return $true
+    # Check if already installed via file path (common locations)
+    $pathsToCheck = @(
+        "$env:ProgramFiles\RyTuneX\RyTuneX.exe",
+        "${env:ProgramFiles(x86)}\RyTuneX\RyTuneX.exe",
+        "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe"
+    )
+    
+    foreach ($path in $pathsToCheck) {
+        if (Test-Path $path) {
+            Write-Info "Rytunex detected at $path. Skipping..."
+            return $true
+        }
     }
     
     # Check if installed via Winget
@@ -268,36 +281,74 @@ function Install-Rytunex {
         return $true
     }
     
-    # Fallback to direct download if winget fails
-    Write-Info "Winget installation failed or package not found. Attempting direct download from GitHub..."
+    Write-ErrorMsg "Failed to install Rytunex via Winget."
+    return $false
+}
+
+# Install O&O ShutUp10++
+function Install-ShutUp10 {
+    Write-Info "Installing O&O ShutUp10++ (Privacy & Telemetry control)..."
+    Install-WingetSoftware -PackageName "O&O ShutUp10++" -WingetId "OO-Software.ShutUp10"
+}
+
+# Install Nilesoft Shell
+function Install-NilesoftShell {
+    Write-Info "Installing Nilesoft Shell (Context Menu customizer)..."
+    Install-WingetSoftware -PackageName "Nilesoft Shell" -WingetId "Nilesoft.Shell"
+}
+
+# Install Windhawk
+function Install-Windhawk {
+    Write-Info "Installing Windhawk (Windows Mods)..."
+    Install-WingetSoftware -PackageName "Windhawk" -WingetId "RamenSoftware.Windhawk"
+}
+
+# Install FluentFlyout (GitHub) for Windows 11
+function Install-FluentFlyout-GitHub {
+    Write-Info "Installing FluentFlyout (Latest from GitHub)..."
     try {
-        $apiUrl = "https://api.github.com/repos/rayenghanmi/RyTuneX/releases/latest"
-        Write-Info "Fetching latest release info from GitHub..."
-        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
+        # Fetch latest release from GitHub API
+        $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/unchihugo/FluentFlyout/releases/latest" -UseBasicParsing
         
-        # Look for the specific setup file
-        $setupAsset = $release.assets | Where-Object { $_.name -eq "RyTuneXSetup.exe" } | Select-Object -First 1
+        # Find the Msixbundle asset
+        $asset = $latest.assets | Where-Object { $_.name -like "*.Msixbundle" } | Select-Object -First 1
         
-        if ($setupAsset) {
+        if ($asset) {
             $tempPath = [System.IO.Path]::GetTempPath()
-            $setupFile = Join-Path $tempPath $setupAsset.name
+            $dlPath = Join-Path $tempPath $asset.name
             
-            Write-Info "Downloading Rytunex $($release.tag_name)..."
-            Invoke-WebRequest -Uri $setupAsset.browser_download_url -OutFile $setupFile -UseBasicParsing
+            Write-Info "Downloading $($asset.name)..."
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $dlPath -UseBasicParsing
             
-            Write-Info "Installing Rytunex..."
-            Start-Process -FilePath $setupFile -ArgumentList "/VERYSILENT" -Wait
+            Write-Info "Installing FluentFlyout package..."
+            Add-AppxPackage -Path $dlPath
             
-            Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-            Write-Success "Rytunex installed successfully via direct download"
+            # Cleanup
+            Remove-Item $dlPath -Force -ErrorAction SilentlyContinue
+            Write-Success "FluentFlyout installed successfully."
             return $true
         } else {
-            Write-ErrorMsg "Could not find 'RyTuneXSetup.exe' in the latest release assets."
+            Write-Warning "Could not find .Msixbundle installer for FluentFlyout on GitHub."
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to install Rytunex via direct download: $($_.Exception.Message)"
+        Write-ErrorMsg "Failed to install FluentFlyout: $($_.Exception.Message)"
         return $false
+    }
+}
+
+# Install Flyouts (Smart Selection)
+function Install-Flyouts {
+    $osVer = [System.Environment]::OSVersion.Version.Build
+    
+    if ($osVer -ge 22000) {
+        # Windows 11
+        Write-Info "Windows 11 detected. Installing FluentFlyout (unchihugo)..."
+        Install-FluentFlyout-GitHub
+    } else {
+        # Windows 10
+        Write-Info "Windows 10 detected. Installing ModernFlyouts..."
+        Install-WingetSoftware -PackageName "ModernFlyouts" -WingetId "ModernFlyouts.ModernFlyouts"
     }
 }
 
@@ -340,10 +391,9 @@ function Install-StoreApps {
     Write-Success "Store apps installation initiated"
 }
 
-# Pin Files App to taskbar
+# Pin Files App to taskbar (Deprecated/Replaced by Update-TaskbarLayout)
 function Set-FilesAppPinned {
-    Write-Info "Please pin Files App to your taskbar manually after installation completes."
-    Write-Host "Location: Start Menu > Files > Right-click > Pin to taskbar" -ForegroundColor Yellow
+    # Function kept for compatibility but logic moved to Update-TaskbarLayout
 }
 
 # Install Steam Deck Tools
@@ -362,6 +412,107 @@ function Install-UnowhyTools {
 function Install-KDEConnect {
     Write-Info "Installing KDE Connect (device connectivity and integration)..."
     Install-WingetSoftware -PackageName "KDE Connect" -WingetId "KDE.KDEConnect"
+}
+
+# Install Spicetify
+function Install-Spicetify {
+    Write-Info "Installing Spicetify (Spotify customization)..."
+    Write-Info "Launching Spicetify installer in a new window..."
+    
+    # Command to resize window and run installer
+    $command = "& { `$host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(100, 30); iwr -useb https://raw.githubusercontent.com/spicetify/cli/main/install.ps1 | iex; Read-Host 'Press Enter to close...' }"
+    
+    Start-Process powershell -ArgumentList "-NoProfile", "-Command", $command
+}
+
+# Install Copilot Instructions for VS Code
+function Install-CopilotInstructions {
+    Write-Info "Installing VS Code Copilot Instructions..."
+    
+    $sourceUrl = "https://raw.githubusercontent.com/LightZirconite/copilot-rules/refs/heads/main/instructions/global.instructions.md"
+    $settingsUrl = "https://raw.githubusercontent.com/LightZirconite/copilot-rules/refs/heads/main/.vscode/settings.json"
+    
+    # Detect VS Code User Data path
+    $appData = $env:APPDATA
+    $targetDir = Join-Path $appData "Code\User\prompts"
+    $settingsFile = Join-Path $appData "Code\User\settings.json"
+    
+    # Check for Insiders if Code not found (optional, sticking to stable for now based on batch)
+    if (-not (Test-Path (Join-Path $appData "Code"))) {
+        if (Test-Path (Join-Path $appData "Code - Insiders")) {
+            $targetDir = Join-Path $appData "Code - Insiders\User\prompts"
+            $settingsFile = Join-Path $appData "Code - Insiders\User\settings.json"
+        }
+    }
+
+    # Create prompts directory
+    if (-not (Test-Path $targetDir)) {
+        New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+    }
+    
+    $destFile = Join-Path $targetDir "global.instructions.md"
+    
+    try {
+        # Download instructions
+        Write-Info "Downloading instructions from GitHub..."
+        Invoke-WebRequest -Uri $sourceUrl -OutFile $destFile -UseBasicParsing
+        Write-Success "Instructions installed to: $destFile"
+        
+        # Update Settings Automatically (No prompt)
+        Write-Info "Updating VS Code settings..."
+        
+        # Method 1: JSON manipulation (Safer than overwriting)
+        if (Test-Path $settingsFile) {
+            try {
+                # Try to parse JSON (Note: Standard JSON only, comments will cause failure)
+                $jsonContent = Get-Content $settingsFile -Raw | ConvertFrom-Json
+                
+                # Add or update the property
+                $jsonContent | Add-Member -Type NoteProperty -Name "github.copilot.chat.codeGeneration.useInstructionFiles" -Value $true -Force
+                $jsonContent | ConvertTo-Json -Depth 10 | Set-Content $settingsFile
+                Write-Success "Settings updated successfully (merged)."
+            } catch {
+                Write-Warning "Could not parse settings.json (likely contains comments). Skipping auto-update to protect your config."
+                Write-Info "Please manually enable 'github.copilot.chat.codeGeneration.useInstructionFiles' in VS Code settings."
+            }
+        } else {
+            # File doesn't exist, download fresh
+            Invoke-WebRequest -Uri $settingsUrl -OutFile $settingsFile -UseBasicParsing
+            Write-Success "Settings file created."
+        }
+        
+        Write-Info "Note: Please restart VS Code manually to apply changes."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to install Copilot instructions: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Update Taskbar Layout (Unpin Explorer)
+function Update-TaskbarLayout {
+    Write-Info "Optimizing Taskbar layout..."
+    
+    try {
+        $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+        $explorerLnk = Join-Path $taskbarPath "File Explorer.lnk"
+        
+        if (Test-Path $explorerLnk) {
+            Write-Info "Unpinning classic File Explorer..."
+            Remove-Item $explorerLnk -Force
+            
+            # Restart Explorer to apply changes
+            Write-Info "Restarting Explorer to apply taskbar changes..."
+            Stop-Process -Name explorer -Force
+            Write-Success "Classic File Explorer unpinned."
+        } else {
+            Write-Info "Classic File Explorer not found on taskbar."
+        }
+        
+        Write-Info "Note: Please pin 'Files App' to your taskbar manually (Right-click app > Pin to taskbar)."
+    } catch {
+        Write-Warning "Could not update taskbar layout: $($_.Exception.Message)"
+    }
 }
 
 # Update all software
@@ -422,8 +573,8 @@ function Enable-MicrosoftStore {
         # Using Start-Process with full path to avoid path issues
         $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
         if (Test-Path $wsresetPath) {
-            # Redirect output to null to hide potential ClipRenew errors which are harmless here
-            Start-Process -FilePath $wsresetPath -ArgumentList "-i" -NoNewWindow -Wait -RedirectStandardOutput $null -RedirectStandardError $null
+            # Run silently with Hidden window style
+            Start-Process -FilePath $wsresetPath -ArgumentList "-i" -WindowStyle Hidden -Wait
         } else {
             Write-Warning "wsreset.exe not found in System32."
         }
@@ -462,6 +613,43 @@ function Enable-MicrosoftStore {
     }
 }
 
+# Setup Defender Exclusion Folder
+function Setup-DefenderExclusion {
+    Write-Info "Setting up excluded folder for Windows Defender..."
+    
+    try {
+        $docsPath = [Environment]::GetFolderPath("MyDocuments")
+        $excludedPath = Join-Path $docsPath "Excluded"
+        
+        # Create directory if it doesn't exist
+        if (-not (Test-Path $excludedPath)) {
+            New-Item -ItemType Directory -Path $excludedPath -Force | Out-Null
+            Write-Info "Created folder: $excludedPath"
+        } else {
+            Write-Info "Folder already exists: $excludedPath"
+        }
+        
+        # Add exclusion
+        if (Get-Command Add-MpPreference -ErrorAction SilentlyContinue) {
+            # Check if already excluded to avoid error or redundancy
+            $prefs = Get-MpPreference
+            if ($prefs.ExclusionPath -contains $excludedPath) {
+                Write-Info "Folder is already in Defender exclusions."
+            } else {
+                Add-MpPreference -ExclusionPath $excludedPath -ErrorAction Stop
+                Write-Success "Added Windows Defender exclusion for: $excludedPath"
+            }
+        } else {
+            Write-Warning "Windows Defender commands not found. Skipping exclusion configuration."
+        }
+        
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to set up exclusion: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 # Main Script Execution
 function Start-Setup {
     # Detect Windows Edition silently first
@@ -471,7 +659,7 @@ function Start-Setup {
     Show-Banner
     
     # Ensure Winget and Frameworks are installed immediately
-    Install-Winget
+    Install-Winget | Out-Null
 
     Write-Host "Detected System: $($osData.Name)" -ForegroundColor Cyan
     if ($windowsEdition -eq "LTSC") {
@@ -499,8 +687,9 @@ function Start-Setup {
     # Question 3: KDE Connect (asked early in sequence)
     $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
     
-    # Question 4-13: Software installations via winget
+    # Question 4-14: Software installations via winget
     $softwareList = @(
+        @{Name="Git"; Id="Git.Git"; Desc="Distributed version control system"},
         @{Name="Discord"; Id="Discord.Discord"; Desc="Voice, video, and text communication platform"},
         @{Name="Steam"; Id="Valve.Steam"; Desc="Gaming platform and store"},
         @{Name="Spotify"; Id="Spotify.Spotify"; Desc="Music streaming service"},
@@ -518,33 +707,52 @@ function Start-Setup {
         $choices.$key = Get-YesNoChoice -Title "Install $($software.Name)?" -Description $software.Desc
     }
     
+    # Question: Copilot Instructions (Only if VS Code is selected or already installed)
+    $vscodeInstalled = (Test-IsInstalled -WingetId "Microsoft.VisualStudioCode") -or (Get-Command "code" -ErrorAction SilentlyContinue)
+    if ($choices.InstallVisualStudioCode -or $vscodeInstalled) {
+        $choices.InstallCopilotInstructions = Get-YesNoChoice -Title "Install VS Code Copilot Instructions?" -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
+    }
+
     # Question 14: Mesh Agent
     $choices.InstallMeshAgent = Get-YesNoChoice -Title "Install Mesh Agent (Remote Management)?" -Description "Remote management and support agent"
     
+    # Question: Defender Exclusion Folder
+    $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
+
     # Question 15: Setup Mode
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
     Write-Host "Choose PC Setup Mode:" -ForegroundColor White
-    Write-Host "1. Performance mode only" -ForegroundColor White
-    Write-Host "   - Bulk Crap Uninstaller (deep software removal)" -ForegroundColor Gray
-    Write-Host "   - Rytunex (system optimization)" -ForegroundColor Gray
+    Write-Host "1. Performance Mode (Pure)" -ForegroundColor White
+    Write-Host "   - Bulk Crap Uninstaller (Deep removal)" -ForegroundColor Gray
+    Write-Host "   - Rytunex (System optimization)" -ForegroundColor Gray
+    Write-Host "   - O&O ShutUp10++ (Telemetry & Privacy)" -ForegroundColor Gray
     Write-Host ""
-    Write-Host "2. Performance + Enhanced Style mode" -ForegroundColor White
-    Write-Host "   - All performance tools" -ForegroundColor Gray
-    Write-Host "   - WinPaletter (Windows theming)" -ForegroundColor Gray
-    Write-Host "   - TranslucentTB (taskbar transparency)" -ForegroundColor Gray
-    Write-Host "   - Files App (modern file manager)" -ForegroundColor Gray
+    Write-Host "2. Performance + Light Style (Custom)" -ForegroundColor White
+    Write-Host "   - All Performance tools" -ForegroundColor Gray
+    Write-Host "   - TranslucentTB (Taskbar transparency)" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "3. Performance + Full Style (Ultimate)" -ForegroundColor White
+    Write-Host "   - All Performance tools" -ForegroundColor Gray
+    Write-Host "   - TranslucentTB & WinPaletter" -ForegroundColor Gray
+    Write-Host "   - Files App (Modern Explorer)" -ForegroundColor Gray
+    Write-Host "   - Nilesoft Shell (Better Context Menu)" -ForegroundColor Gray
+    Write-Host "   - Windhawk (Mods for Windows)" -ForegroundColor Gray
+    Write-Host "   - Modern/Fluent Flyouts (Better UI overlays)" -ForegroundColor Gray
     Write-Host "   - Optional: Lively Wallpaper" -ForegroundColor Gray
     Write-Host "============================================" -ForegroundColor Yellow
     
     do {
-        $setupMode = Read-Host "Enter choice (1-2)"
-    } while ($setupMode -notin @("1", "2"))
+        $setupMode = Read-Host "Enter choice (1-3)"
+    } while ($setupMode -notin @("1", "2", "3"))
     
     $choices.SetupMode = $setupMode
     
-    if ($setupMode -eq "2") {
-        $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine (alternative to Wallpaper Engine)"
+    # Lively Wallpaper option (Only for Mode 3 or if requested in Mode 2?)
+    # Keeping it simple: Mode 3 gets the prompt. Mode 2 is "Light", so maybe skip unless we want to be very granular.
+    # Let's stick to the plan: Mode 3 gets full suite prompts.
+    if ($setupMode -eq "3") {
+        $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
     }
     
     # Question 16: Steam Deck Tools
@@ -600,62 +808,93 @@ function Start-Setup {
 
     # Update winget sources to ensure packages are found
     Write-Info "Updating winget sources..."
-    Start-Process winget -ArgumentList "source update" -NoNewWindow -Wait
+    Start-Process winget -ArgumentList "source update" -WindowStyle Hidden -Wait
     
     # Execute installations based on choices
     if ($choices.InstallOffice) {
-        Install-Office
+        Install-Office | Out-Null
     }
     
     if ($choices.Activate) {
-        Invoke-Activation
+        Invoke-Activation | Out-Null
         Write-Warning "Please complete activation in the new window, then return here."
         Read-Host "Press Enter when activation is complete to continue"
     }
     
     if ($choices.InstallKDEConnect) {
-        Install-KDEConnect
+        Install-KDEConnect | Out-Null
     }
     
     # Install software via winget
+    $spotifyInstalled = $false
     foreach ($software in $softwareList) {
         $key = "Install$($software.Name -replace '\s','')"
         if ($choices.$key) {
-            Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id
+            $result = Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id
+            if ($software.Name -eq "Spotify" -and $result) {
+                $spotifyInstalled = $true
+            }
         }
     }
     
-    if ($choices.InstallMeshAgent) {
-        Install-MeshAgent
+    if ($spotifyInstalled) {
+        Install-Spicetify
     }
     
+    # Install Copilot Instructions
+    if ($choices.InstallCopilotInstructions) {
+        Install-CopilotInstructions | Out-Null
+    }
+
+    if ($choices.InstallMeshAgent) {
+        Install-MeshAgent | Out-Null
+    }
+    
+    if ($choices.SetupExclusionFolder) {
+        Setup-DefenderExclusion | Out-Null
+    }
+
     # Setup Mode installations
-    if ($choices.SetupMode -eq "1" -or $choices.SetupMode -eq "2") {
+    # Common Performance Tools (Modes 1, 2, 3)
+    if ($choices.SetupMode -in @("1", "2", "3")) {
         Write-Info "Installing Performance Mode tools..."
-        Install-BulkCrapUninstaller
-        Install-Rytunex
+        Install-BulkCrapUninstaller | Out-Null
+        Install-Rytunex | Out-Null
+        Install-ShutUp10 | Out-Null
         
         Write-Info "Recommendation: For maximum performance, consider installing Windows 10 IoT Enterprise LTSC 2021"
         Write-Info "Download: https://delivery.activated.win/dbmassgrave/en-us_windows_10_iot_enterprise_ltsc_2021_x64_dvd_257ad90f.iso"
     }
     
+    # Mode 2: Performance + Light Style (TranslucentTB)
     if ($choices.SetupMode -eq "2") {
-        Write-Info "Installing Enhanced Style Mode tools..."
-        Install-WinPaletter
-        Install-StoreApps
-        Set-FilesAppPinned
+        Write-Info "Installing Light Style Mode tools..."
+        Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9" | Out-Null
+    }
+
+    # Mode 3: Performance + Full Style
+    if ($choices.SetupMode -eq "3") {
+        Write-Info "Installing Full Style Mode tools..."
+        Install-WinPaletter | Out-Null
+        Install-StoreApps | Out-Null # Includes TranslucentTB & Files App
+        Install-NilesoftShell | Out-Null
+        Install-Windhawk | Out-Null
+        Install-Flyouts # Smart detection Win10/11
+        
+        # Update taskbar (Unpin Explorer)
+        Update-TaskbarLayout
         
         if ($choices.InstallLivelyWallpaper) {
-            Install-LivelyWallpaper
+            Install-LivelyWallpaper | Out-Null
         }
     }
     
     if ($choices.InstallSteamDeckTools) {
-        Install-SteamDeckTools
+        Install-SteamDeckTools | Out-Null
     }
     
     if ($choices.InstallUnowhyTools) {
-        Install-UnowhyTools
+        Install-UnowhyTools | Out-Null
     }
     
     # LTSC-specific installations
@@ -679,32 +918,36 @@ function Start-Setup {
 
             # Force source update for msstore
             Write-Info "Refreshing Winget sources..."
-            winget source update --name msstore
+            winget source update --name msstore | Out-Null
 
             if ($choices.InstallNotepad) {
-                # Try installing via ID first, then fallback to name if needed
-                # Using --accept-source-agreements to bypass prompts
-                Install-WingetSoftware -PackageName "Notepad" -WingetId "9MSMLRH6LZF3"
+                # Check Windows Build for compatibility (Modern Notepad needs 19041+)
+                $osBuild = [System.Environment]::OSVersion.Version.Build
+                if ($osBuild -ge 19041) {
+                    Install-WingetSoftware -PackageName "Notepad" -WingetId "9MSMLRH6LZF3" | Out-Null
+                } else {
+                    Write-Warning "Skipping Modern Notepad: Requires Windows 10 version 2004 (Build 19041) or newer. You are on Build $osBuild."
+                }
             }
             
             if ($choices.InstallWindowsTerminal) {
-                Install-WingetSoftware -PackageName "Windows Terminal" -WingetId "Microsoft.WindowsTerminal"
+                Install-WingetSoftware -PackageName "Windows Terminal" -WingetId "Microsoft.WindowsTerminal" | Out-Null
             }
             
             if ($choices.InstallCalculator) {
-                Install-WingetSoftware -PackageName "Calculator" -WingetId "9WZDNCRFHVN5"
+                Install-WingetSoftware -PackageName "Calculator" -WingetId "9WZDNCRFHVN5" | Out-Null
             }
             
             if ($choices.InstallCamera) {
-                Install-WingetSoftware -PackageName "Camera" -WingetId "9WZDNCRFJBBG"
+                Install-WingetSoftware -PackageName "Camera" -WingetId "9WZDNCRFJBBG" | Out-Null
             }
             
             if ($choices.InstallMediaPlayer) {
-                Install-WingetSoftware -PackageName "Media Player" -WingetId "9WZDNCRFJ3PT"
+                Install-WingetSoftware -PackageName "Media Player" -WingetId "9WZDNCRFJ3PT" | Out-Null
             }
             
             if ($choices.InstallPhotos) {
-                Install-WingetSoftware -PackageName "Photos" -WingetId "9WZDNCRFJBH4"
+                Install-WingetSoftware -PackageName "Photos" -WingetId "9WZDNCRFJBH4" | Out-Null
             }
         } else {
             Write-Warning "Microsoft Store is not detected. Skipping Store apps installation to prevent errors."
@@ -713,7 +956,7 @@ function Start-Setup {
     
     # System Update (done last)
     if ($choices.UpdateAllSoftware) {
-        Update-AllSoftware
+        Update-AllSoftware | Out-Null
     }
     
     # Completion
