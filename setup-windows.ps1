@@ -15,11 +15,13 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     
     if ($PSCommandPath) {
         Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
+        exit
     } else {
         # If running via IEX/Pipe, relaunch the download command as admin
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/LightZirconite/setup-script/main/setup-windows.ps1 | iex`"" -Verb RunAs
+        # Added -NoExit so the new window stays open (useful for debugging or seeing completion)
+        Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/LightZirconite/setup-script/main/setup-windows.ps1 | iex`"" -Verb RunAs
+        return # Use return instead of exit to avoid closing the original terminal
     }
-    exit
 }
 
 # Set console encoding to UTF-8 for proper character display
