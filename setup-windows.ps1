@@ -114,25 +114,41 @@ function Install-Winget {
             Start-Process "ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1"
             Write-Info "Store page opened. Please click 'Install' or 'Update' for App Installer."
             
-            # Wait a bit to see if user installs it, or check in loop?
-            # Since we can't automate the click in Store easily without UI automation, 
-            # we might still need the fallback if user doesn't click.
-            # BUT, user asked to automate it. 
-            # Actually, we can try `winget install` logic but we don't have winget yet.
-            # We can try `Add-AppxPackage` from the Store's package family name if we could download it, but we can't easily.
+            # Wait for user action
+            Write-Host ""
+            Write-Host "============================================" -ForegroundColor Yellow
+            Write-Host "ACTION REQUIRED" -ForegroundColor White
+            Write-Host "Please install/update 'App Installer' in the Store window that just opened." -ForegroundColor Gray
+            Write-Host "Once the installation is finished, come back here." -ForegroundColor Gray
+            Write-Host "============================================" -ForegroundColor Yellow
+            Write-Host ""
             
-            # Let's stick to the robust manual method as primary fallback, 
-            # BUT first, let's try to see if we can just register it if it's already there but dormant.
+            $storeInstallDone = Get-YesNoChoice -Title "Did you successfully install App Installer?" -Description "Select Yes if installed, No to try manual installation fallback"
             
-            $appInstaller = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
-            if ($appInstaller) {
-                Write-Info "App Installer seems present but Winget command missing. Registering..."
-                Add-AppxPackage -DisableDevelopmentMode -Register "$($appInstaller.InstallLocation)\AppxManifest.xml" -ErrorAction SilentlyContinue
+            if ($storeInstallDone) {
+                Write-Info "Verifying installation..."
+                # Give it a moment to register
+                Start-Sleep -Seconds 5
                 if (Get-Command winget -ErrorAction SilentlyContinue) {
-                    Write-Success "Winget restored successfully."
+                    Write-Success "Winget detected successfully!"
                     return $true
+                } else {
+                    Write-Warning "Winget command still not found. Trying to register manually..."
+                    # Try to register if installed but not in path
+                    $appInstaller = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
+                    if ($appInstaller) {
+                        Add-AppxPackage -DisableDevelopmentMode -Register "$($appInstaller.InstallLocation)\AppxManifest.xml" -ErrorAction SilentlyContinue
+                        if (Get-Command winget -ErrorAction SilentlyContinue) {
+                            Write-Success "Winget restored successfully."
+                            return $true
+                        }
+                    }
+                    Write-Warning "Verification failed. Proceeding to manual fallback..."
                 }
+            } else {
+                Write-Info "Skipping Store verification. Proceeding to manual fallback..."
             }
+
         } catch {
             Write-Warning "Store method failed. Proceeding to manual installation..."
         }
