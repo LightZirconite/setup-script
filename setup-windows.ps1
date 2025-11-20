@@ -50,19 +50,13 @@ function Get-WindowsEdition {
         $osInfo = Get-ComputerInfo | Select-Object OsName, OsVersion, WindowsEditionId
         $editionId = $osInfo.WindowsEditionId
         
-        Write-Info "Detected Windows Edition: $editionId"
-        Write-Info "OS: $($osInfo.OsName)"
-        
         if ($editionId -like "*LTSC*" -or $editionId -like "*IoT*" -or $editionId -like "*Enterprise*LTSC*") {
-            Write-Warning "LTSC/IoT Edition detected - additional setup options will be available"
-            return "LTSC"
+            return @{ Type="LTSC"; Name=$osInfo.OsName; Id=$editionId }
         } else {
-            Write-Info "Standard Windows 10/11 Edition detected"
-            return "Standard"
+            return @{ Type="Standard"; Name=$osInfo.OsName; Id=$editionId }
         }
     } catch {
-        Write-ErrorMsg "Failed to detect Windows edition: $($_.Exception.Message)"
-        return "Unknown"
+        return @{ Type="Unknown"; Name="Unknown"; Id="Unknown" }
     }
 }
 
@@ -91,50 +85,35 @@ function Get-YesNoChoice {
 
 # Install Office function
 function Install-Office {
-    param([string]$Method)
-    
     Write-Info "Installing Microsoft Office..."
     
-    if ($Method -eq "winget") {
-        try {
-            winget install Microsoft.Office --accept-package-agreements --accept-source-agreements
-            Write-Success "Office installed via winget"
-            return $true
-        } catch {
-            Write-ErrorMsg "Failed to install Office via winget: $($_.Exception.Message)"
-            return $false
-        }
-    } else {
-        try {
-            $officeUrl = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=O365ProPlusRetail&platform=x64&language=en-us&version=O16GA"
-            $tempPath = [System.IO.Path]::GetTempPath()
-            $setupFile = Join-Path $tempPath "OfficeSetup.exe"
-            
-            Write-Info "Downloading Office setup..."
-            Invoke-WebRequest -Uri $officeUrl -OutFile $setupFile -UseBasicParsing
-            
-            Write-Info "Executing Office setup..."
-            Start-Process -FilePath $setupFile -Wait
-            
-            Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-            Write-Success "Office installation completed"
-            return $true
-        } catch {
-            Write-ErrorMsg "Failed to install Office via direct download: $($_.Exception.Message)"
-            return $false
-        }
+    try {
+        $officeUrl = "https://c2rsetup.officeapps.live.com/c2r/download.aspx?ProductreleaseID=O365ProPlusRetail&platform=x64&language=en-us&version=O16GA"
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $setupFile = Join-Path $tempPath "OfficeSetup.exe"
+        
+        Write-Info "Downloading Office setup..."
+        Invoke-WebRequest -Uri $officeUrl -OutFile $setupFile -UseBasicParsing
+        
+        Write-Info "Executing Office setup..."
+        Start-Process -FilePath $setupFile -Wait
+        
+        Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
+        Write-Success "Office installation completed"
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to install Office: $($_.Exception.Message)"
+        return $false
     }
 }
 
 # Activate Windows/Office
 function Invoke-Activation {
-    param([string]$Target)
-    
-    Write-Info "Opening activation script for: $Target"
-    Write-Warning "A new PowerShell window will open. Follow the instructions there."
+    Write-Info "Opening Microsoft Activation Scripts (MAS)..."
+    Write-Warning "A new PowerShell window will open. Please select your activation option there."
     
     try {
-        Start-Process powershell -ArgumentList "-NoExit", "-Command", "irm https://get.activated.win | iex" -Verb RunAs
+        Start-Process powershell -ArgumentList "-NoExit", "-WindowStyle", "Hidden", "-Command", "irm https://get.activated.win | iex" -Verb RunAs
         Write-Success "Activation window opened"
         return $true
     } catch {
@@ -143,18 +122,39 @@ function Invoke-Activation {
     }
 }
 
+# Check if software is installed via winget
+function Test-IsInstalled {
+    param([string]$WingetId)
+    $process = Start-Process winget -ArgumentList "list --id $WingetId --exact --accept-source-agreements" -NoNewWindow -PassThru -Wait
+    return ($process.ExitCode -eq 0)
+}
+
 # Install software via winget
 function Install-WingetSoftware {
     param([string]$PackageName, [string]$WingetId)
     
+    if (Test-IsInstalled -WingetId $WingetId) {
+        Write-Info "$PackageName is already installed. Skipping..."
+        return $true
+    }
+
     Write-Info "Installing $PackageName via winget..."
     
     try {
-        winget install $WingetId --accept-package-agreements --accept-source-agreements
-        Write-Success "$PackageName installed successfully"
-        return $true
+        $process = Start-Process winget -ArgumentList "install --id $WingetId --accept-package-agreements --accept-source-agreements --silent" -NoNewWindow -PassThru -Wait
+        
+        if ($process.ExitCode -eq 0) {
+            Write-Success "$PackageName installed successfully"
+            return $true
+        } elseif ($process.ExitCode -eq -2143309565) { # 0x803fb103
+            Write-Warning "Skipping $PackageName: Not compatible with this Windows edition (LTSC/IoT) without full Store support."
+            return $false
+        } else {
+            Write-ErrorMsg "Failed to install ${PackageName}. Exit code: $($process.ExitCode)"
+            return $false
+        }
     } catch {
-        Write-ErrorMsg "Failed to install ${PackageName}: $($_.Exception.Message)"
+        Write-ErrorMsg "Failed to execute winget for ${PackageName}: $($_.Exception.Message)"
         return $false
     }
 }
@@ -186,85 +186,68 @@ function Install-MeshAgent {
 # Install Bulk Crap Uninstaller
 function Install-BulkCrapUninstaller {
     Write-Info "Installing Bulk Crap Uninstaller (deep software uninstallation tool)..."
-    
-    try {
-        $apiUrl = "https://api.github.com/repos/Klocman/Bulk-Crap-Uninstaller/releases/latest"
-        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
-        $setupAsset = $release.assets | Where-Object { $_.name -like "*setup.exe" } | Select-Object -First 1
-        
-        if ($setupAsset) {
-            $tempPath = [System.IO.Path]::GetTempPath()
-            $setupFile = Join-Path $tempPath $setupAsset.name
-            
-            Write-Info "Downloading BCUninstaller $($release.tag_name)..."
-            Invoke-WebRequest -Uri $setupAsset.browser_download_url -OutFile $setupFile -UseBasicParsing
-            
-            Write-Info "Installing BCUninstaller..."
-            Start-Process -FilePath $setupFile -ArgumentList "/VERYSILENT" -Wait
-            
-            Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-            Write-Success "Bulk Crap Uninstaller installed successfully"
-            return $true
-        } else {
-            Write-ErrorMsg "Could not find setup file in latest release"
-            return $false
-        }
-    } catch {
-        Write-ErrorMsg "Failed to install Bulk Crap Uninstaller: $($_.Exception.Message)"
-        return $false
-    }
+    Install-WingetSoftware -PackageName "Bulk Crap Uninstaller" -WingetId "Klocman.BulkCrapUninstaller"
 }
 
 # Install Rytunex
 function Install-Rytunex {
     Write-Info "Installing Rytunex (system optimization tool)..."
-    Install-WingetSoftware -PackageName "Rytunex" -WingetId "rytunex"
-}
-
-# Install WinPaletter
-function Install-WinPaletter {
-    Write-Info "Installing WinPaletter (Windows theming tool)..."
     
-    try {
-        winget install Abdelrhman-AK.WinPaletter --accept-package-agreements --accept-source-agreements
-        Write-Success "WinPaletter installed successfully"
+    # Check if already installed via file path (common location)
+    $rytunexPath = "$env:ProgramFiles\RyTuneX\RyTuneX.exe"
+    if (Test-Path $rytunexPath) {
+        Write-Info "Rytunex detected at $rytunexPath. Skipping..."
         return $true
-    } catch {
-        Write-ErrorMsg "Failed to install WinPaletter: $($_.Exception.Message)"
-        return $false
     }
-}
 
-# Install Lively Wallpaper
-function Install-LivelyWallpaper {
-    Write-Info "Installing Lively Wallpaper..."
+    # Try winget first
+    if (Install-WingetSoftware -PackageName "Rytunex" -WingetId "Rayen.RyTuneX") {
+        return $true
+    }
     
+    # Fallback to direct download if winget fails
+    Write-Info "Winget installation failed or package not found. Attempting direct download from GitHub..."
     try {
-        $apiUrl = "https://api.github.com/repos/rocksdanister/lively/releases/latest"
+        $apiUrl = "https://api.github.com/repos/rayenghanmi/RyTuneX/releases/latest"
+        Write-Info "Fetching latest release info from GitHub..."
         $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
-        $setupAsset = $release.assets | Where-Object { $_.name -like "*setup*.exe" -and $_.name -like "*full*" } | Select-Object -First 1
+        
+        # Look for the specific setup file
+        $setupAsset = $release.assets | Where-Object { $_.name -eq "RyTuneXSetup.exe" } | Select-Object -First 1
         
         if ($setupAsset) {
             $tempPath = [System.IO.Path]::GetTempPath()
             $setupFile = Join-Path $tempPath $setupAsset.name
             
-            Write-Info "Downloading Lively Wallpaper $($release.tag_name)..."
+            Write-Info "Downloading Rytunex $($release.tag_name)..."
             Invoke-WebRequest -Uri $setupAsset.browser_download_url -OutFile $setupFile -UseBasicParsing
             
-            Write-Info "Installing Lively Wallpaper..."
+            Write-Info "Installing Rytunex..."
             Start-Process -FilePath $setupFile -ArgumentList "/VERYSILENT" -Wait
             
             Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-            Write-Success "Lively Wallpaper installed successfully"
+            Write-Success "Rytunex installed successfully via direct download"
             return $true
         } else {
-            Write-ErrorMsg "Could not find setup file in latest release"
+            Write-ErrorMsg "Could not find 'RyTuneXSetup.exe' in the latest release assets."
             return $false
         }
     } catch {
-        Write-ErrorMsg "Failed to install Lively Wallpaper: $($_.Exception.Message)"
+        Write-ErrorMsg "Failed to install Rytunex via direct download: $($_.Exception.Message)"
         return $false
     }
+}
+
+# Install WinPaletter
+function Install-WinPaletter {
+    Write-Info "Installing WinPaletter (Windows theming tool)..."
+    Install-WingetSoftware -PackageName "WinPaletter" -WingetId "Abdelrhman-AK.WinPaletter"
+}
+
+# Install Lively Wallpaper
+function Install-LivelyWallpaper {
+    Write-Info "Installing Lively Wallpaper..."
+    Install-WingetSoftware -PackageName "Lively Wallpaper" -WingetId "DaniJohn.LivelyWallpaper"
 }
 
 # Install Microsoft Store apps
@@ -286,10 +269,10 @@ function Install-StoreApp {
 # Install TranslucentTB and Files App automatically
 function Install-StoreApps {
     Write-Info "Installing TranslucentTB (taskbar transparency tool)..."
-    winget install 9PF4KZ2VN4W9 --accept-package-agreements --accept-source-agreements
+    Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9"
     
     Write-Info "Installing Files App (modern file manager)..."
-    winget install 9NGHP3DX8HDX --accept-package-agreements --accept-source-agreements
+    Install-WingetSoftware -PackageName "Files App" -WingetId "9NGHP3DX8HDX"
     
     Write-Success "Store apps installation initiated"
 }
@@ -303,33 +286,7 @@ function Set-FilesAppPinned {
 # Install Steam Deck Tools
 function Install-SteamDeckTools {
     Write-Info "Installing Steam Deck Tools (provides drivers and fan control for Steam Deck on Windows)..."
-    
-    try {
-        $apiUrl = "https://api.github.com/repos/ayufan/steam-deck-tools/releases/latest"
-        $release = Invoke-RestMethod -Uri $apiUrl -UseBasicParsing
-        $setupAsset = $release.assets | Where-Object { $_.name -like "*setup.exe" } | Select-Object -First 1
-        
-        if ($setupAsset) {
-            $tempPath = [System.IO.Path]::GetTempPath()
-            $setupFile = Join-Path $tempPath $setupAsset.name
-            
-            Write-Info "Downloading Steam Deck Tools $($release.tag_name)..."
-            Invoke-WebRequest -Uri $setupAsset.browser_download_url -OutFile $setupFile -UseBasicParsing
-            
-            Write-Info "Installing Steam Deck Tools..."
-            Start-Process -FilePath $setupFile -Wait
-            
-            Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-            Write-Success "Steam Deck Tools installed successfully"
-            return $true
-        } else {
-            Write-ErrorMsg "Could not find setup file in latest release"
-            return $false
-        }
-    } catch {
-        Write-ErrorMsg "Failed to install Steam Deck Tools: $($_.Exception.Message)"
-        return $false
-    }
+    Install-WingetSoftware -PackageName "Steam Deck Tools" -WingetId "Ayufan.SteamDeckTools"
 }
 
 # Install Unowhy Tools
@@ -341,50 +298,19 @@ function Install-UnowhyTools {
 # Install KDE Connect
 function Install-KDEConnect {
     Write-Info "Installing KDE Connect (device connectivity and integration)..."
-    
-    try {
-        $baseUrl = "https://mirrors.ircam.fr/pub/KDE/Attic/release-service/"
-        
-        Write-Info "Fetching latest KDE Connect release..."
-        $response = Invoke-WebRequest -Uri $baseUrl -UseBasicParsing
-        $versions = $response.Links | Where-Object { $_.href -match '^\d+\.\d+' } | 
-                    ForEach-Object { $_.href.TrimEnd('/') } | 
-                    Sort-Object -Descending | Select-Object -First 1
-        
-        if ($versions) {
-            $versionUrl = "$baseUrl$versions/windows/"
-            $versionPage = Invoke-WebRequest -Uri $versionUrl -UseBasicParsing
-            $kdeConnectFile = $versionPage.Links | Where-Object { $_.href -like "*kdeconnect-kde*windows*.exe" } | 
-                             Select-Object -First 1
-            
-            if ($kdeConnectFile) {
-                $downloadUrl = $versionUrl + $kdeConnectFile.href
-                $tempPath = [System.IO.Path]::GetTempPath()
-                $setupFile = Join-Path $tempPath $kdeConnectFile.href
-                
-                Write-Info "Downloading KDE Connect..."
-                Invoke-WebRequest -Uri $downloadUrl -OutFile $setupFile -UseBasicParsing
-                
-                Write-Info "Installing KDE Connect..."
-                Start-Process -FilePath $setupFile -Wait
-                
-                Remove-Item $setupFile -Force -ErrorAction SilentlyContinue
-                Write-Success "KDE Connect installed successfully"
-                return $true
-            }
-        }
-        
-        Write-ErrorMsg "Could not find KDE Connect download"
-        return $false
-    } catch {
-        Write-ErrorMsg "Failed to install KDE Connect: $($_.Exception.Message)"
-        return $false
-    }
+    Install-WingetSoftware -PackageName "KDE Connect" -WingetId "KDE.KDEConnect"
 }
 
 # Update all software
 function Update-AllSoftware {
     Write-Info "Updating all installed software via winget..."
+    
+    # Close common apps to prevent update failures (Exit code 23)
+    Write-Info "Closing common applications to ensure smooth updates..."
+    $appsToClose = @("Spotify", "Discord", "Steam", "Firefox", "chrome", "msedge", "Code")
+    foreach ($app in $appsToClose) {
+        Stop-Process -Name $app -Force -ErrorAction SilentlyContinue
+    }
     
     try {
         winget upgrade --all --accept-package-agreements --accept-source-agreements
@@ -419,12 +345,18 @@ Start-Process -FilePath `$env:TEMP\Add-Store.cmd -Wait
 
 # Main Script Execution
 function Start-Setup {
-    Show-Banner
+    # Detect Windows Edition silently first
+    $osData = Get-WindowsEdition
+    $windowsEdition = $osData.Type
     
-    # Detect Windows Edition
-    Write-Info "Step 1: Detecting Windows Edition..."
-    $windowsEdition = Get-WindowsEdition
-    Start-Sleep -Seconds 2
+    Show-Banner
+    Write-Host "Detected System: $($osData.Name)" -ForegroundColor Cyan
+    if ($windowsEdition -eq "LTSC") {
+        Write-Host "Edition Type: LTSC/IoT (Additional options enabled)" -ForegroundColor Yellow
+    } else {
+        Write-Host "Edition Type: Standard" -ForegroundColor Gray
+    }
+    Write-Host ""
     
     # Store all user choices
     $choices = @{}
@@ -437,29 +369,9 @@ function Start-Setup {
     
     # Question 1: Install Office
     $choices.InstallOffice = Get-YesNoChoice -Title "Install Microsoft Office?" -Description "Microsoft Office suite (Word, Excel, PowerPoint, etc.)"
-    if ($choices.InstallOffice) {
-        $choices.OfficeMethod = Get-YesNoChoice -Title "Use winget for Office installation?" -Description "Y = winget (faster), N = Direct download from Microsoft"
-        $choices.OfficeMethod = if ($choices.OfficeMethod) { "winget" } else { "direct" }
-    }
     
     # Question 2: Activate Windows/Office
     $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office?" -Description "Opens Microsoft Activation Scripts (MAS) for activation"
-    if ($choices.Activate) {
-        Write-Host ""
-        Write-Host "What would you like to activate?" -ForegroundColor Yellow
-        Write-Host "1. Windows only" -ForegroundColor White
-        Write-Host "2. Office only" -ForegroundColor White
-        Write-Host "3. Both Windows and Office" -ForegroundColor White
-        do {
-            $activateChoice = Read-Host "Enter choice (1-3)"
-        } while ($activateChoice -notin @("1", "2", "3"))
-        
-        $choices.ActivateTarget = switch ($activateChoice) {
-            "1" { "Windows" }
-            "2" { "Office" }
-            "3" { "Both" }
-        }
-    }
     
     # Question 3: KDE Connect (asked early in sequence)
     $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
@@ -529,13 +441,29 @@ function Start-Setup {
         Write-Host "================================================================" -ForegroundColor Magenta
         Write-Host ""
         
-        $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Enable Microsoft Store?" -Description "Adds Microsoft Store to LTSC/IoT editions"
-        $choices.InstallNotepad = Get-YesNoChoice -Title "Install Notepad from Store?" -Description "Modern Notepad application"
-        $choices.InstallWindowsTerminal = Get-YesNoChoice -Title "Install Windows Terminal?" -Description "Modern terminal application"
-        $choices.InstallCalculator = Get-YesNoChoice -Title "Install Calculator?" -Description "Windows Calculator application"
-        $choices.InstallCamera = Get-YesNoChoice -Title "Install Camera?" -Description "Windows Camera application"
-        $choices.InstallMediaPlayer = Get-YesNoChoice -Title "Install Media Player?" -Description "Windows Media Player"
-        $choices.InstallPhotos = Get-YesNoChoice -Title "Install Photos?" -Description "Windows Photos application"
+        # Check if Store is already installed
+        $isStoreInstalled = Get-AppxPackage -Name Microsoft.WindowsStore
+        
+        if ($isStoreInstalled) {
+            Write-Info "Microsoft Store is detected on your system."
+            $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Repair/Update Microsoft Store components?" -Description "Recommended if you have trouble installing Store apps (fixes missing frameworks)"
+        } else {
+            $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Enable Microsoft Store?" -Description "Adds Microsoft Store to LTSC/IoT editions"
+        }
+        
+        # Check if Store infrastructure is likely available (existing or will be installed)
+        $storeAvailable = $isStoreInstalled -or $choices.EnableMicrosoftStore
+        
+        if ($storeAvailable) {
+            $choices.InstallNotepad = Get-YesNoChoice -Title "Install Notepad from Store?" -Description "Modern Notepad application"
+            $choices.InstallWindowsTerminal = Get-YesNoChoice -Title "Install Windows Terminal?" -Description "Modern terminal application"
+            $choices.InstallCalculator = Get-YesNoChoice -Title "Install Calculator?" -Description "Windows Calculator application"
+            $choices.InstallCamera = Get-YesNoChoice -Title "Install Camera?" -Description "Windows Camera application"
+            $choices.InstallMediaPlayer = Get-YesNoChoice -Title "Install Media Player?" -Description "Windows Media Player"
+            $choices.InstallPhotos = Get-YesNoChoice -Title "Install Photos?" -Description "Windows Photos application"
+        } else {
+            Write-Warning "Microsoft Store not enabled/detected. Skipping Store apps (Notepad, Terminal, etc.) to prevent errors."
+        }
     }
     
     # Installation Phase
@@ -546,14 +474,18 @@ function Start-Setup {
     Write-Host ""
     
     Start-Sleep -Seconds 2
+
+    # Update winget sources to ensure packages are found
+    Write-Info "Updating winget sources..."
+    Start-Process winget -ArgumentList "source update" -NoNewWindow -Wait
     
     # Execute installations based on choices
     if ($choices.InstallOffice) {
-        Install-Office -Method $choices.OfficeMethod
+        Install-Office
     }
     
     if ($choices.Activate) {
-        Invoke-Activation -Target $choices.ActivateTarget
+        Invoke-Activation
         Write-Warning "Please complete activation in the new window, then return here."
         Read-Host "Press Enter when activation is complete to continue"
     }
@@ -609,28 +541,35 @@ function Start-Setup {
             Enable-MicrosoftStore
         }
         
-        if ($choices.InstallNotepad) {
-            Install-WingetSoftware -PackageName "Notepad" -WingetId "9MSMLRH6LZF3"
-        }
+        # Check if Store infrastructure is likely available
+        $storeAvailable = (Get-AppxPackage -Name Microsoft.WindowsStore) -or $choices.EnableMicrosoftStore
         
-        if ($choices.InstallWindowsTerminal) {
-            Install-WingetSoftware -PackageName "Windows Terminal" -WingetId "Microsoft.WindowsTerminal"
-        }
-        
-        if ($choices.InstallCalculator) {
-            Install-WingetSoftware -PackageName "Calculator" -WingetId "9WZDNCRFHVN5"
-        }
-        
-        if ($choices.InstallCamera) {
-            Install-WingetSoftware -PackageName "Camera" -WingetId "9WZDNCRFJBBG"
-        }
-        
-        if ($choices.InstallMediaPlayer) {
-            Install-WingetSoftware -PackageName "Media Player" -WingetId "9WZDNCRFJ3PT"
-        }
-        
-        if ($choices.InstallPhotos) {
-            Install-WingetSoftware -PackageName "Photos" -WingetId "9WZDNCRFJBH4"
+        if ($storeAvailable) {
+            if ($choices.InstallNotepad) {
+                Install-WingetSoftware -PackageName "Notepad" -WingetId "9MSMLRH6LZF3"
+            }
+            
+            if ($choices.InstallWindowsTerminal) {
+                Install-WingetSoftware -PackageName "Windows Terminal" -WingetId "Microsoft.WindowsTerminal"
+            }
+            
+            if ($choices.InstallCalculator) {
+                Install-WingetSoftware -PackageName "Calculator" -WingetId "9WZDNCRFHVN5"
+            }
+            
+            if ($choices.InstallCamera) {
+                Install-WingetSoftware -PackageName "Camera" -WingetId "9WZDNCRFJBBG"
+            }
+            
+            if ($choices.InstallMediaPlayer) {
+                Install-WingetSoftware -PackageName "Media Player" -WingetId "9WZDNCRFJ3PT"
+            }
+            
+            if ($choices.InstallPhotos) {
+                Install-WingetSoftware -PackageName "Photos" -WingetId "9WZDNCRFJBH4"
+            }
+        } else {
+            Write-Warning "Microsoft Store is not detected. Skipping Store apps installation to prevent errors."
         }
     }
     
@@ -659,5 +598,13 @@ function Start-Setup {
     }
 }
 
-# Run the setup
-Start-Setup
+# Run the setup with global error handling
+try {
+    Start-Setup
+} catch {
+    Write-ErrorMsg "A critical error occurred: $($_.Exception.Message)"
+    Write-Host "Error Details: $_" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Press Enter to exit..." -ForegroundColor Yellow
+    Read-Host
+}
