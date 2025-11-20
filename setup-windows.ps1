@@ -102,7 +102,44 @@ function Install-Winget {
         return $true
     }
 
-    Write-Info "Winget not found. Installing Winget and required frameworks..."
+    Write-Info "Winget not found. Attempting installation..."
+    
+    # Strategy 1: Try installing via Microsoft Store (if available)
+    # This is the most reliable method if the Store is present
+    if (Get-AppxPackage -Name Microsoft.WindowsStore) {
+        Write-Info "Microsoft Store detected. Attempting to install App Installer via Store..."
+        try {
+            # Trigger Store update/install for App Installer
+            # "9NBLGGH4NNS1" is the Store ID for App Installer (Winget)
+            Start-Process "ms-windows-store://pdp/?ProductId=9NBLGGH4NNS1"
+            Write-Info "Store page opened. Please click 'Install' or 'Update' for App Installer."
+            
+            # Wait a bit to see if user installs it, or check in loop?
+            # Since we can't automate the click in Store easily without UI automation, 
+            # we might still need the fallback if user doesn't click.
+            # BUT, user asked to automate it. 
+            # Actually, we can try `winget install` logic but we don't have winget yet.
+            # We can try `Add-AppxPackage` from the Store's package family name if we could download it, but we can't easily.
+            
+            # Let's stick to the robust manual method as primary fallback, 
+            # BUT first, let's try to see if we can just register it if it's already there but dormant.
+            
+            $appInstaller = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
+            if ($appInstaller) {
+                Write-Info "App Installer seems present but Winget command missing. Registering..."
+                Add-AppxPackage -DisableDevelopmentMode -Register "$($appInstaller.InstallLocation)\AppxManifest.xml" -ErrorAction SilentlyContinue
+                if (Get-Command winget -ErrorAction SilentlyContinue) {
+                    Write-Success "Winget restored successfully."
+                    return $true
+                }
+            }
+        } catch {
+            Write-Warning "Store method failed. Proceeding to manual installation..."
+        }
+    }
+
+    # Strategy 2: Manual Installation (GitHub) - Robust Fallback
+    Write-Info "Installing Winget manually from GitHub (Official Release)..."
     
     $tempPath = [System.IO.Path]::GetTempPath()
     
@@ -666,6 +703,23 @@ function Start-Setup {
     
     Show-Banner
     
+    # LTSC Special Handling: Enable Store EARLY if needed for Winget
+    if ($windowsEdition -eq "LTSC") {
+        Write-Host "LTSC/IoT Edition Detected." -ForegroundColor Yellow
+        
+        # Check if Store is missing
+        if (-not (Get-AppxPackage -Name Microsoft.WindowsStore)) {
+            Write-Info "Microsoft Store is missing (common on LTSC)."
+            $enableStore = Get-YesNoChoice -Title "Enable Microsoft Store now?" -Description "Required for easier app installation (including Winget/App Installer)"
+            
+            if ($enableStore) {
+                Enable-MicrosoftStore | Out-Null
+                # Refresh environment to ensure Store is recognized
+                Start-Sleep -Seconds 2
+            }
+        }
+    }
+
     # Ensure Winget and Frameworks are installed immediately
     Install-Winget | Out-Null
 
@@ -780,13 +834,16 @@ function Start-Setup {
         Write-Host "================================================================" -ForegroundColor Magenta
         Write-Host ""
         
-        # Check if Store is already installed
+        # Store was handled early, just check status
         $isStoreInstalled = Get-AppxPackage -Name Microsoft.WindowsStore
         
         if ($isStoreInstalled) {
-            Write-Info "Microsoft Store is detected on your system."
-            $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Repair/Update Microsoft Store components?" -Description "Recommended if you have trouble installing Store apps (fixes missing frameworks)"
+            Write-Info "Microsoft Store is active."
+            # Optional repair question if user wants to be sure
+            # $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Repair/Update Microsoft Store components?" ...
         } else {
+            # If user declined early, ask again? Or assume no.
+            # Let's ask again only if they skipped it, as it enables other apps
             $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Enable Microsoft Store?" -Description "Adds Microsoft Store to LTSC/IoT editions"
         }
         
