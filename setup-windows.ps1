@@ -149,7 +149,15 @@ function Install-Winget {
         $vcLibsUrl = "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx"
         $vcLibsPath = Join-Path $tempPath "Microsoft.VCLibs.x64.14.00.Desktop.appx"
         Invoke-WebRequest -Uri $vcLibsUrl -OutFile $vcLibsPath -UseBasicParsing
-        Add-AppxPackage -Path $vcLibsPath
+        try {
+            Add-AppxPackage -Path $vcLibsPath -ErrorAction Stop
+        } catch {
+            if ($_.Exception.Message -like "*higher version*already installed*" -or $_.Exception.HResult -eq -2147009274) { # 0x80073D06
+                Write-Info "Newer version of VCLibs already installed. Skipping."
+            } else {
+                Write-Warning "VCLibs installation issue: $($_.Exception.Message). Proceeding anyway..."
+            }
+        }
         
         # 2. Install UI Xaml (Framework)
         Write-Info "Downloading and installing UI Xaml (Framework)..."
@@ -157,7 +165,15 @@ function Install-Winget {
         $uiXamlUrl = "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx"
         $uiXamlPath = Join-Path $tempPath "Microsoft.UI.Xaml.2.8.x64.appx"
         Invoke-WebRequest -Uri $uiXamlUrl -OutFile $uiXamlPath -UseBasicParsing
-        Add-AppxPackage -Path $uiXamlPath
+        try {
+            Add-AppxPackage -Path $uiXamlPath -ErrorAction Stop
+        } catch {
+            if ($_.Exception.Message -like "*higher version*already installed*" -or $_.Exception.HResult -eq -2147009274) { # 0x80073D06
+                Write-Info "Newer version of UI Xaml already installed. Skipping."
+            } else {
+                Write-Warning "UI Xaml installation issue: $($_.Exception.Message). Proceeding anyway..."
+            }
+        }
 
         # 3. Install Winget (DesktopAppInstaller)
         Write-Info "Downloading and installing Winget..."
@@ -181,6 +197,14 @@ function Install-Winget {
         }
     } catch {
         Write-ErrorMsg "Failed to install Winget/Frameworks: $($_.Exception.Message)"
+        Write-Info "Suggestion: Try running Windows Update to install App Installer automatically, then restart."
+        
+        $openUpdate = Get-YesNoChoice -Title "Open Windows Update Settings?" -Description "If installation fails, updating Windows often fixes missing components."
+        if ($openUpdate) {
+            Start-Process "ms-settings:windowsupdate"
+            Write-Warning "Please update Windows, restart, and run this script again."
+            exit
+        }
         return $false
     }
 }
