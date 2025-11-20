@@ -812,7 +812,11 @@ function Start-Setup {
     # Question: Copilot Instructions (Only if VS Code is selected or already installed)
     $vscodeInstalled = (Test-IsInstalled -WingetId "Microsoft.VisualStudioCode") -or (Get-Command "code" -ErrorAction SilentlyContinue)
     if ($choices.InstallVisualStudioCode -or $vscodeInstalled) {
-        $choices.InstallCopilotInstructions = Get-YesNoChoice -Title "Install VS Code Copilot Instructions?" -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
+        $msg = "Install VS Code Copilot Instructions?"
+        if ($choices.InstallVisualStudioCode -and -not $vscodeInstalled) {
+            $msg = "Install VS Code Copilot Instructions (will be applied after VS Code)?"
+        }
+        $choices.InstallCopilotInstructions = Get-YesNoChoice -Title $msg -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
     }
 
     # Question 14: Mesh Agent
@@ -879,8 +883,8 @@ function Start-Setup {
         
         if ($isStoreInstalled) {
             Write-Info "Microsoft Store is active."
-            # Optional repair question if user wants to be sure
-            # $choices.EnableMicrosoftStore = Get-YesNoChoice -Title "Repair/Update Microsoft Store components?" ...
+            # Store is already there, no need to ask again
+            $choices.EnableMicrosoftStore = $true
         } else {
             # If user declined early, ask again? Or assume no.
             # Let's ask again only if they skipped it, as it enables other apps
