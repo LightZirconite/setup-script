@@ -18,7 +18,7 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
         Write-Host "Closing original window in 10 seconds..." -ForegroundColor Gray
         Start-Sleep -Seconds 10
         exit
-    } else {
+    } else {s
         # If running via IEX/Pipe, relaunch the download command as admin
         # Added -NoExit so the new window stays open (useful for debugging or seeing completion)
         Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/LightZirconite/setup-script/main/setup-windows.ps1 | iex`"" -Verb RunAs
