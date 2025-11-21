@@ -337,7 +337,14 @@ function Install-WingetSoftware {
                 
                 try {
                     Write-Info "Downloading from vendor..."
+                    # Disable progress bar to speed up download significantly
+                    $oldProgressPreference = $ProgressPreference
+                    $ProgressPreference = 'SilentlyContinue'
+                    
                     Invoke-WebRequest -Uri $FallbackUrl -OutFile $dlPath -UseBasicParsing
+                    
+                    # Restore progress preference
+                    $ProgressPreference = $oldProgressPreference
                     
                     Write-Info "Installing $PackageName..."
                     Start-Process -FilePath $dlPath -Wait
@@ -870,7 +877,7 @@ function Start-Setup {
         @{Name="Discord"; Id="Discord.Discord"; Desc="Voice, video, and text communication platform"},
         @{Name="Steam"; Id="Valve.Steam"; Desc="Gaming platform and store"},
         @{Name="Spotify"; Id="Spotify.Spotify"; Desc="Music streaming service"},
-        @{Name="Termius"; Id="Eugeny.Termius"; Desc="Modern terminal emulator"; Fallback="https://autoupdate.termius.com/windows/Install%20Termius.exe"},
+        @{Name="Termius"; Id="Termius.Termius"; Desc="Modern terminal emulator"; Fallback="https://autoupdate.termius.com/windows/Install%20Termius.exe"},
         @{Name="Visual Studio Code"; Id="Microsoft.VisualStudioCode"; Desc="Code editor"},
         @{Name="Discord PTB"; Id="Discord.Discord.PTB"; Desc="Discord Public Test Build"},
         @{Name="Discord Canary"; Id="Discord.Discord.Canary"; Desc="Discord Canary (experimental features)"},
