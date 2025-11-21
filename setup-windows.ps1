@@ -544,19 +544,10 @@ function Install-FluentFlyout-GitHub {
     }
 }
 
-# Install Flyouts (Smart Selection)
+# Install Flyouts (FluentFlyout for both Windows 10 and 11)
 function Install-Flyouts {
-    $osVer = [System.Environment]::OSVersion.Version.Build
-    
-    if ($osVer -ge 22000) {
-        # Windows 11
-        Write-Info "Windows 11 detected. Installing FluentFlyout (unchihugo)..."
-        Install-FluentFlyout-GitHub
-    } else {
-        # Windows 10
-        Write-Info "Windows 10 detected. Installing ModernFlyouts..."
-        Install-WingetSoftware -PackageName "ModernFlyouts" -WingetId "ModernFlyouts.ModernFlyouts"
-    }
+    Write-Info "Installing FluentFlyout (modern audio/media flyout)..."
+    Install-FluentFlyout-GitHub
 }
 
 # Install WinPaletter
@@ -576,6 +567,13 @@ function Apply-Windows11Theme {
     Write-Info "Applying Windows 11 theme pack..."
     
     try {
+        # Check if Windows 11 theme is already applied
+        $currentTheme = Get-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes" -Name "CurrentTheme" -ErrorAction SilentlyContinue
+        if ($currentTheme -and $currentTheme.CurrentTheme -like "*Windows-11*") {
+            Write-Info "Windows 11 theme is already applied. Skipping."
+            return $true
+        }
+        
         $tempPath = [System.IO.Path]::GetTempPath()
         $themeFile = Join-Path $tempPath "Windows-11.deskthemepack"
         
@@ -585,8 +583,15 @@ function Apply-Windows11Theme {
         Write-Info "Applying theme..."
         Start-Process -FilePath $themeFile -Wait
         
+        Write-Info "Switching to dark mode..."
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "AppsUseLightTheme" -Value 0 -Type DWord -Force
+        Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize" -Name "SystemUsesLightTheme" -Value 0 -Type DWord -Force
+        
+        Write-Info "Closing Settings window..."
+        Get-Process | Where-Object { $_.ProcessName -eq "SystemSettings" } | Stop-Process -Force -ErrorAction SilentlyContinue
+        
         Remove-Item $themeFile -ErrorAction SilentlyContinue
-        Write-Success "Windows 11 theme pack applied successfully."
+        Write-Success "Windows 11 theme pack applied successfully in dark mode."
         
         return $true
     } catch {
@@ -747,6 +752,13 @@ function Update-TaskbarLayout {
     
     try {
         $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+        
+        # Check if taskbar folder exists (may not exist on fresh LTSC)
+        if (-not (Test-Path $taskbarPath)) {
+            Write-Info "Taskbar folder not found. Skipping taskbar optimization."
+            return
+        }
+        
         $explorerLnk = Join-Path $taskbarPath "File Explorer.lnk"
         
         if (Test-Path $explorerLnk) {
@@ -890,12 +902,13 @@ function Update-AllSoftware {
         "Chrome" = @("chrome");
         "Edge" = @("msedge", "MicrosoftEdge");
         "VSCode" = @("Code");
-        "Notepad++" = @("notepad++");
+        "Notepad" = @("notepad++");
         "Termius" = @("Termius")
     }
     
     foreach ($appName in $appProcessMap.Keys) {
-        if ($upgradeList -match $appName) {
+        $escapedAppName = [regex]::Escape($appName)
+        if ($upgradeList -match $escapedAppName) {
             $processNames = $appProcessMap[$appName]
             foreach ($procName in $processNames) {
                 if ($runningProcesses -contains $procName) {
@@ -1366,6 +1379,10 @@ function Start-Setup {
     Write-Host "================================================================" -ForegroundColor Green
     Write-Host ""
     Write-Success "All selected components have been installed/configured."
+    
+    # Show summary of specialized tools
+    Show-InstalledToolsSummary -Choices $choices
+    
     Write-Info "Some applications may require a system restart to function properly."
     Write-Host ""
     
@@ -1377,6 +1394,74 @@ function Start-Setup {
     } else {
         Write-Info "Please restart your computer when convenient."
     }
+}
+
+# Show summary of installed tools
+function Show-InstalledToolsSummary {
+    param([hashtable]$Choices)
+    
+    Write-Host ""
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host "           Installed Tools & Software Guide                     " -ForegroundColor Cyan
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host ""
+    
+    $toolsInstalled = @()
+    
+    # Performance tools (installed in all modes)
+    if ($Choices.SetupMode -in @("1", "2", "3")) {
+        $toolsInstalled += @(
+            @{Name="Bulk Crap Uninstaller"; Desc="Advanced software removal tool - removes leftover files and registry entries that standard uninstallers miss"; Source="GitHub: Klocman/Bulk-Crap-Uninstaller"},
+            @{Name="Rytunex"; Desc="System optimization and tweaking tool - improves Windows performance, disables telemetry, and applies registry tweaks"; Source="GitHub: rayenghanmi/RyTuneX"},
+            @{Name="O&O ShutUp10++"; Desc="Privacy configurator - automatically applied recommended settings to disable Windows telemetry and tracking"; Source="oo-software.com"},
+            @{Name="LoginLight"; Desc="Startup manager - controls which programs launch at Windows startup for faster boot times"; Source="GitHub: LightZirconite/LoginLight"}
+        )
+    }
+    
+    # Style tools (Mode 3)
+    if ($Choices.SetupMode -eq "3") {
+        $toolsInstalled += @(
+            @{Name="WinPaletter"; Desc="Complete Windows theming tool - customize colors, accents, and visual styles system-wide"; Source="GitHub: Abdelrhman-AK/WinPaletter"},
+            @{Name="Files App"; Desc="Modern file manager replacement - tabs, dual-pane, Git integration, and modern UI"; Source="files.community"},
+            @{Name="Nilesoft Shell"; Desc="Advanced context menu customizer - adds powerful options and customizations to right-click menus"; Source="GitHub: nilesoft/shell"},
+            @{Name="Windhawk"; Desc="Windows customization platform - install mods to modify Windows behavior (taskbar, explorer, etc.)"; Source="GitHub: ramensoftware/windhawk"; Tips="Open Windhawk > Browse mods > Install 'Taskbar volume control' for additional taskbar customization"},
+            @{Name="FluentFlyout"; Desc="Modern audio/media flyout with volume, brightness, and lock keys - compatible with Windows 10 & 11"; Source="GitHub: unchihugo/FluentFlyout"}
+        )
+    }
+    
+    # Device-specific tools
+    if ($Choices.InstallSteamDeckTools) {
+        $toolsInstalled += @{Name="Steam Deck Tools"; Desc="Drivers and fan control for Steam Deck hardware on Windows"; Source="GitHub: ayufan/steam-deck-tools"}
+    }
+    
+    if ($Choices.InstallUnowhyTools) {
+        $toolsInstalled += @{Name="Unowhy Tools"; Desc="Device-specific drivers for Unowhy computers"; Source="Unowhy official"}
+    }
+    
+    if ($Choices.InstallKDEConnect) {
+        $toolsInstalled += @{Name="KDE Connect"; Desc="Device integration - sync notifications, share files, and control your PC from your phone"; Source="KDE Project"}
+    }
+    
+    # Display tools
+    if ($toolsInstalled.Count -gt 0) {
+        Write-Host "Specialized tools installed:" -ForegroundColor Yellow
+        Write-Host ""
+        
+        foreach ($tool in $toolsInstalled) {
+            Write-Host "  ● $($tool.Name)" -ForegroundColor White
+            Write-Host "    $($tool.Desc)" -ForegroundColor Gray
+            if ($tool.Source) {
+                Write-Host "    Source: $($tool.Source)" -ForegroundColor DarkGray
+            }
+            if ($tool.Tips) {
+                Write-Host "    ➤ Tip: $($tool.Tips)" -ForegroundColor Cyan
+            }
+            Write-Host ""
+        }
+    }
+    
+    Write-Host "================================================================" -ForegroundColor Cyan
+    Write-Host ""
 }
 
 # Run the setup with global error handling
