@@ -467,28 +467,8 @@ function Install-LoginLight {
     Write-Info "Installing LoginLight (Startup Manager)..."
     
     try {
-        Write-Info "Running LoginLight installer in background..."
-        
-        $job = Start-Job -ScriptBlock {
-            try {
-                irm https://raw.githubusercontent.com/LightZirconite/LoginLight/main/Install-Startup.ps1 | iex
-            } catch {
-                Write-Error "LoginLight installation failed: $_"
-            }
-        }
-        
-        Write-Info "LoginLight installation started in background (Job ID: $($job.Id))."
-        Write-Info "Waiting up to 2 minutes for completion..."
-        
-        $timeout = Wait-Job -Job $job -Timeout 120
-        
-        if ($timeout) {
-            Write-Success "LoginLight installation completed."
-            Remove-Job -Job $job -Force
-        } else {
-            Write-Warning "LoginLight installation is taking longer than expected. Continuing in background..."
-        }
-        
+        Start-Process powershell -ArgumentList "-WindowStyle Hidden", "-Command", "irm https://raw.githubusercontent.com/LightZirconite/LoginLight/main/Install-Startup.ps1 | iex" -WindowStyle Hidden
+        Write-Success "LoginLight installation started in background."
         return $true
     } catch {
         Write-ErrorMsg "Failed to start LoginLight installation: $($_.Exception.Message)"
@@ -505,7 +485,34 @@ function Install-NilesoftShell {
 # Install Windhawk
 function Install-Windhawk {
     Write-Info "Installing Windhawk (Windows Mods)..."
-    Install-WingetSoftware -PackageName "Windhawk" -WingetId "RamenSoftware.Windhawk"
+    
+    try {
+        Write-Info "Fetching latest Windhawk release..."
+        $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/ramensoftware/windhawk/releases/latest" -UseBasicParsing
+        
+        $asset = $latest.assets | Where-Object { $_.name -like "*_setup.exe" } | Select-Object -First 1
+        
+        if ($asset) {
+            $tempPath = [System.IO.Path]::GetTempPath()
+            $setupFile = Join-Path $tempPath $asset.name
+            
+            Write-Info "Downloading Windhawk installer..."
+            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $setupFile -UseBasicParsing
+            
+            Write-Info "Installing Windhawk..."
+            Start-Process -FilePath $setupFile -ArgumentList "/VERYSILENT", "/NORESTART" -Wait
+            
+            Remove-Item $setupFile -ErrorAction SilentlyContinue
+            Write-Success "Windhawk installed successfully."
+            return $true
+        } else {
+            Write-ErrorMsg "Could not find Windhawk setup file."
+            return $false
+        }
+    } catch {
+        Write-ErrorMsg "Failed to install Windhawk: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # Install FluentFlyout (GitHub) for Windows 11
@@ -591,26 +598,27 @@ function Install-StoreApps {
     Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9"
     
     Write-Info "Installing Files App (modern file manager)..."
-    # Files App installation via .appinstaller as requested
-    $filesAppUrl = "https://files.community/appinstallers/Files.stable.appinstaller"
-    Write-Info "Installing Files App from: $filesAppUrl"
     
     try {
-        # Attempt silent installation using Add-AppxPackage (PowerShell native command)
-        # This avoids the GUI popup if possible
-        Write-Info "Attempting silent installation..."
-        Add-AppxPackage -AppInstallerFile $filesAppUrl -ErrorAction Stop
-        Write-Success "Files App installed successfully."
-    } catch {
-        Write-Warning "Silent installation failed: $($_.Exception.Message)"
-        Write-Info "Opening installer window for manual installation..."
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $appInstallerFile = Join-Path $tempPath "Files.stable.appinstaller"
+        
+        Write-Info "Downloading Files App installer..."
+        Invoke-WebRequest -Uri "https://files.community/appinstallers/Files.stable.appinstaller" -OutFile $appInstallerFile -UseBasicParsing
+        
+        Write-Info "Installing Files App..."
         try {
-            # Fallback to opening the .appinstaller file (GUI)
-            Start-Process $filesAppUrl
-            Write-Info "Please click 'Install' in the window that opened."
+            Add-AppxPackage -AppInstallerFile $appInstallerFile -ErrorAction Stop
+            Write-Success "Files App installed successfully."
         } catch {
-            Write-ErrorMsg "Failed to launch Files App installer: $($_.Exception.Message)"
+            Write-Warning "Silent installation failed. Opening installer for manual installation..."
+            Start-Process $appInstallerFile
+            Write-Info "Please click 'Install' in the window that opened."
         }
+        
+        Remove-Item $appInstallerFile -ErrorAction SilentlyContinue
+    } catch {
+        Write-ErrorMsg "Failed to download/install Files App: $($_.Exception.Message)"
     }
     
     Write-Success "Store apps installation initiated"
@@ -733,10 +741,50 @@ function Update-TaskbarLayout {
         } else {
             Write-Info "Classic File Explorer not found on taskbar."
         }
-        
-        Write-Info "Note: Please pin 'Files App' to your taskbar manually (Right-click app > Pin to taskbar)."
     } catch {
         Write-Warning "Could not update taskbar layout: $($_.Exception.Message)"
+    }
+}
+
+# Pin Files App to Taskbar
+function Set-FilesAppTaskbarPin {
+    Write-Info "Checking if Files App is installed..."
+    
+    try {
+        $filesApp = Get-AppxPackage -Name "49306atecsolution.FilesUWP" -ErrorAction SilentlyContinue
+        
+        if ($filesApp) {
+            Write-Info "Files App detected. Attempting to pin to taskbar..."
+            
+            # Get the app's executable path
+            $appUserModelId = "49306atecsolution.FilesUWP_022e9s543c7kr!App"
+            
+            # Create shortcut in TaskBar folder
+            $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+            $shortcutPath = Join-Path $taskbarPath "Files.lnk"
+            
+            # Use PowerShell to create an app shortcut
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            $shortcut.TargetPath = "explorer.exe"
+            $shortcut.Arguments = "shell:AppsFolder\$appUserModelId"
+            $shortcut.Save()
+            
+            Write-Success "Files App pinned to taskbar successfully."
+            
+            # Restart Explorer to apply changes
+            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            
+            return $true
+        } else {
+            Write-Warning "Files App is not installed yet. Skipping taskbar pin."
+            return $false
+        }
+    } catch {
+        Write-Warning "Could not pin Files App to taskbar: $($_.Exception.Message)"
+        Write-Info "You can manually pin Files App by right-clicking it and selecting 'Pin to taskbar'."
+        return $false
     }
 }
 
@@ -754,25 +802,30 @@ function Update-AllSoftware {
 
     Write-Info "Updates found. Preparing to update..."
 
-    # Map common process names to their likely Winget names/IDs for smarter closing
-    # Key = Process Name, Value = String to match in winget output
-    $processMap = @{
-        "Spotify" = "Spotify";
-        "Discord" = "Discord";
-        "Steam" = "Steam";
-        "firefox" = "Firefox";
-        "chrome" = "Google Chrome";
-        "msedge" = "Microsoft Edge";
-        "Code" = "Visual Studio Code"
+    # Get all running processes that might need updating
+    $runningProcesses = Get-Process | Select-Object -ExpandProperty Name -Unique
+    
+    # Map common app names to their process variations
+    $appProcessMap = @{
+        "Discord" = @("Discord", "DiscordPTB", "DiscordCanary", "DiscordDevelopment");
+        "Spotify" = @("Spotify", "SpotifyWebHelper");
+        "Steam" = @("Steam");
+        "Firefox" = @("firefox");
+        "Chrome" = @("chrome");
+        "Edge" = @("msedge", "MicrosoftEdge");
+        "VSCode" = @("Code");
+        "Notepad++" = @("notepad++");
+        "Termius" = @("Termius")
     }
-
-    foreach ($procName in $processMap.Keys) {
-        $wingetMatch = $processMap[$procName]
-        # Check if the app is in the update list
-        if ($upgradeList -match $wingetMatch) {
-            if (Get-Process -Name $procName -ErrorAction SilentlyContinue) {
-                Write-Info "Closing $procName to allow update..."
-                Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+    
+    foreach ($appName in $appProcessMap.Keys) {
+        if ($upgradeList -match $appName) {
+            $processNames = $appProcessMap[$appName]
+            foreach ($procName in $processNames) {
+                if ($runningProcesses -contains $procName) {
+                    Write-Info "Closing $procName to allow update..."
+                    Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+                }
             }
         }
     }
@@ -1210,6 +1263,12 @@ function Start-Setup {
     # System Update (done last)
     if ($choices.UpdateAllSoftware) {
         Update-AllSoftware | Out-Null
+    }
+    
+    # Final touch: Pin Files App to taskbar if installed (Mode 3)
+    if ($choices.SetupMode -eq "3") {
+        Write-Info "Finalizing taskbar configuration..."
+        Set-FilesAppTaskbarPin | Out-Null
     }
     
     # Completion
