@@ -513,6 +513,15 @@ function Install-Windhawk {
 # Install FluentFlyout (GitHub) for Windows 11
 function Install-FluentFlyout-GitHub {
     Write-Info "Installing FluentFlyout (Latest from GitHub)..."
+    
+    # Check if FluentFlyout is already installed
+    $existingApp = Get-AppxPackage | Where-Object { $_.Name -like "*FluentFlyout*" -or $_.PackageFullName -like "*FluentFlyout*" }
+    
+    if ($existingApp) {
+        Write-Info "FluentFlyout is already installed ($($existingApp.Name)). Skipping."
+        return $true
+    }
+    
     try {
         # Fetch latest release from GitHub API
         $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/unchihugo/FluentFlyout/releases/latest" -UseBasicParsing
@@ -884,11 +893,16 @@ function Update-AllSoftware {
     $upgradeList = winget upgrade --include-unknown | Out-String
     
     if ($upgradeList -match "No installed package found" -or ($upgradeList -notmatch "Name\s+Id\s+Version" -and $upgradeList -notmatch "Nom\s+Id\s+Version")) {
-        Write-Success "No updates available."
+        Write-Success "No updates available. All software is up to date."
         return $true
     }
 
-    Write-Info "Updates found. Preparing to update..."
+    Write-Host ""
+    Write-Host "Available updates:" -ForegroundColor Yellow
+    Write-Host $upgradeList -ForegroundColor Gray
+    Write-Host ""
+    
+    Write-Info "Preparing to update packages..."
 
     # Get all running processes that might need updating
     $runningProcesses = Get-Process | Select-Object -ExpandProperty Name -Unique
@@ -906,6 +920,7 @@ function Update-AllSoftware {
         "Termius" = @("Termius")
     }
     
+    $closedApps = @()
     foreach ($appName in $appProcessMap.Keys) {
         $escapedAppName = [regex]::Escape($appName)
         if ($upgradeList -match $escapedAppName) {
@@ -914,14 +929,39 @@ function Update-AllSoftware {
                 if ($runningProcesses -contains $procName) {
                     Write-Info "Closing $procName to allow update..."
                     Stop-Process -Name $procName -Force -ErrorAction SilentlyContinue
+                    $closedApps += $procName
                 }
             }
         }
     }
     
+    if ($closedApps.Count -gt 0) {
+        Write-Info "Closed $($closedApps.Count) running application(s) for update."
+    }
+    
+    Write-Host ""
+    Write-Info "Starting update process... (this may take a few minutes)"
+    Write-Host ""
+    
     try {
-        winget upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown
-        Write-Success "Software updates completed"
+        $updateOutput = winget upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown 2>&1 | Out-String
+        
+        Write-Host $updateOutput -ForegroundColor Gray
+        Write-Host ""
+        
+        # Count successful updates
+        $successCount = ([regex]::Matches($updateOutput, "Successfully installed")).Count
+        
+        if ($successCount -gt 0) {
+            Write-Success "Successfully updated $successCount package(s)."
+        } else {
+            Write-Success "Update process completed."
+        }
+        
+        if ($updateOutput -match "No applicable update found" -or $updateOutput -match "No packages found") {
+            Write-Info "Some packages were already up to date or had no available updates."
+        }
+        
         return $true
     } catch {
         Write-ErrorMsg "Failed to update software: $($_.Exception.Message)"
