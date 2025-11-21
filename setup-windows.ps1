@@ -432,10 +432,68 @@ function Install-Rytunex {
     return $false
 }
 
-# Install O&O ShutUp10++
+# Install O&O ShutUp10++ and apply recommended settings
 function Install-ShutUp10 {
     Write-Info "Installing O&O ShutUp10++ (Privacy & Telemetry control)..."
-    Install-WingetSoftware -PackageName "O&O ShutUp10++" -WingetId "OO-Software.ShutUp10"
+    
+    try {
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $shutupExe = Join-Path $tempPath "OOSU10.exe"
+        $configFile = Join-Path $tempPath "ooshutup10_recommended.cfg"
+        
+        Write-Info "Downloading O&O ShutUp10++..."
+        Invoke-WebRequest -Uri "https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe" -OutFile $shutupExe -UseBasicParsing
+        
+        Write-Info "Downloading recommended configuration..."
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/LightZirconite/setup-script/main/ooshutup10_recommended.cfg" -OutFile $configFile -UseBasicParsing
+        
+        Write-Info "Applying recommended privacy settings..."
+        Start-Process -FilePath $shutupExe -ArgumentList "$configFile /quiet" -Wait
+        
+        Write-Success "O&O ShutUp10++ installed and configured successfully."
+        
+        Remove-Item $shutupExe -ErrorAction SilentlyContinue
+        Remove-Item $configFile -ErrorAction SilentlyContinue
+        
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to install/configure ShutUp10++: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Install LoginLight (automatic startup manager)
+function Install-LoginLight {
+    Write-Info "Installing LoginLight (Startup Manager)..."
+    
+    try {
+        Write-Info "Running LoginLight installer in background..."
+        
+        $job = Start-Job -ScriptBlock {
+            try {
+                irm https://raw.githubusercontent.com/LightZirconite/LoginLight/main/Install-Startup.ps1 | iex
+            } catch {
+                Write-Error "LoginLight installation failed: $_"
+            }
+        }
+        
+        Write-Info "LoginLight installation started in background (Job ID: $($job.Id))."
+        Write-Info "Waiting up to 2 minutes for completion..."
+        
+        $timeout = Wait-Job -Job $job -Timeout 120
+        
+        if ($timeout) {
+            Write-Success "LoginLight installation completed."
+            Remove-Job -Job $job -Force
+        } else {
+            Write-Warning "LoginLight installation is taking longer than expected. Continuing in background..."
+        }
+        
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to start LoginLight installation: $($_.Exception.Message)"
+        return $false
+    }
 }
 
 # Install Nilesoft Shell
@@ -1055,6 +1113,7 @@ function Start-Setup {
         Install-BulkCrapUninstaller | Out-Null
         Install-Rytunex | Out-Null
         Install-ShutUp10 | Out-Null
+        Install-LoginLight | Out-Null
         
         Write-Info "Recommendation: For maximum performance, consider installing Windows 10 IoT Enterprise LTSC 2021"
         Write-Info "Download: https://delivery.activated.win/dbmassgrave/en-us_windows_10_iot_enterprise_ltsc_2021_x64_dvd_257ad90f.iso"
