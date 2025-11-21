@@ -101,12 +101,21 @@ function Get-YesNoChoice {
 
 # Install Winget and dependencies (Frameworks)
 function Install-Winget {
-    if (Get-Command winget -ErrorAction SilentlyContinue) {
-        Write-Info "Winget is already installed."
+    # Check if App Installer (which provides .appinstaller support) is installed
+    # User requested explicit check for .appinstaller support
+    $appInstallerPkg = Get-AppxPackage -Name Microsoft.DesktopAppInstaller
+    $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
+
+    if ($appInstallerPkg -and $wingetCmd) {
+        Write-Info "App Installer (Winget) is already installed."
         return $true
     }
 
-    Write-Info "Winget not found. Attempting installation..."
+    if (-not $appInstallerPkg) {
+        Write-Info "App Installer package is missing. Proceeding to install..."
+    } elseif (-not $wingetCmd) {
+        Write-Info "Winget command missing despite App Installer package. Attempting to fix..."
+    }
     
     # Strategy 1: Try installing via Microsoft Store (if available)
     # This is the most reliable method if the Store is present
@@ -517,7 +526,27 @@ function Install-StoreApps {
     Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9"
     
     Write-Info "Installing Files App (modern file manager)..."
-    Install-WingetSoftware -PackageName "Files App" -WingetId "9NGHP3DX8HDX"
+    # Files App installation via .appinstaller as requested
+    $filesAppUrl = "https://files.community/appinstallers/Files.stable.appinstaller"
+    Write-Info "Installing Files App from: $filesAppUrl"
+    
+    try {
+        # Attempt silent installation using Add-AppxPackage (PowerShell native command)
+        # This avoids the GUI popup if possible
+        Write-Info "Attempting silent installation..."
+        Add-AppxPackage -AppInstallerFile $filesAppUrl -ErrorAction Stop
+        Write-Success "Files App installed successfully."
+    } catch {
+        Write-Warning "Silent installation failed: $($_.Exception.Message)"
+        Write-Info "Opening installer window for manual installation..."
+        try {
+            # Fallback to opening the .appinstaller file (GUI)
+            Start-Process $filesAppUrl
+            Write-Info "Please click 'Install' in the window that opened."
+        } catch {
+            Write-ErrorMsg "Failed to launch Files App installer: $($_.Exception.Message)"
+        }
+    }
     
     Write-Success "Store apps installation initiated"
 }
