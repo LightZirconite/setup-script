@@ -15,16 +15,11 @@ if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdenti
     
     if ($PSCommandPath) {
         Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`"" -Verb RunAs
-        Write-Host "Closing original window in 10 seconds..." -ForegroundColor Gray
-        Start-Sleep -Seconds 10
         exit
     } else {
         # If running via IEX/Pipe, relaunch the download command as admin
-        # Added -NoExit so the new window stays open (useful for debugging or seeing completion)
         Start-Process powershell.exe -ArgumentList "-NoExit -NoProfile -ExecutionPolicy Bypass -Command `"irm https://raw.githubusercontent.com/LightZirconite/setup-script/main/setup-windows.ps1 | iex`"" -Verb RunAs
-        Write-Host "Closing original window in 10 seconds..." -ForegroundColor Gray
-        Start-Sleep -Seconds 10
-        return # Use return instead of exit to avoid closing the original terminal
+        exit
     }
 }
 
@@ -576,6 +571,30 @@ function Install-LivelyWallpaper {
     Install-WingetSoftware -PackageName "Lively Wallpaper" -WingetId "DaniJohn.LivelyWallpaper"
 }
 
+# Apply Windows 11 Theme Pack
+function Apply-Windows11Theme {
+    Write-Info "Applying Windows 11 theme pack..."
+    
+    try {
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $themeFile = Join-Path $tempPath "Windows-11.deskthemepack"
+        
+        Write-Info "Downloading Windows 11 theme pack..."
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/LightZirconite/setup-script/main/Windows-11.deskthemepack" -OutFile $themeFile -UseBasicParsing
+        
+        Write-Info "Applying theme..."
+        Start-Process -FilePath $themeFile -Wait
+        
+        Remove-Item $themeFile -ErrorAction SilentlyContinue
+        Write-Success "Windows 11 theme pack applied successfully."
+        
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to apply Windows 11 theme: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 # Install Microsoft Store apps
 function Install-StoreApp {
     param([string]$AppName, [string]$AppId)
@@ -751,16 +770,22 @@ function Set-FilesAppTaskbarPin {
     Write-Info "Checking if Files App is installed..."
     
     try {
-        $filesApp = Get-AppxPackage -Name "49306atecsolution.FilesUWP" -ErrorAction SilentlyContinue
+        # Try multiple possible package names
+        $filesApp = Get-AppxPackage | Where-Object { $_.Name -like "*Files*" -and $_.Name -notlike "*FileExplorer*" -and $_.Publisher -like "*Yair*" } | Select-Object -First 1
         
         if ($filesApp) {
-            Write-Info "Files App detected. Attempting to pin to taskbar..."
+            Write-Info "Files App detected: $($filesApp.Name)"
             
-            # Get the app's executable path
-            $appUserModelId = "49306atecsolution.FilesUWP_022e9s543c7kr!App"
+            # Extract the app user model ID
+            $appUserModelId = "$($filesApp.PackageFamilyName)!App"
             
             # Create shortcut in TaskBar folder
             $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+            
+            if (-not (Test-Path $taskbarPath)) {
+                New-Item -Path $taskbarPath -ItemType Directory -Force | Out-Null
+            }
+            
             $shortcutPath = Join-Path $taskbarPath "Files.lnk"
             
             # Use PowerShell to create an app shortcut
@@ -784,6 +809,57 @@ function Set-FilesAppTaskbarPin {
     } catch {
         Write-Warning "Could not pin Files App to taskbar: $($_.Exception.Message)"
         Write-Info "You can manually pin Files App by right-clicking it and selecting 'Pin to taskbar'."
+        return $false
+    }
+}
+
+# Pin Rytunex to Taskbar
+function Set-RytunexTaskbarPin {
+    Write-Info "Checking if Rytunex is installed..."
+    
+    try {
+        # Check multiple possible locations for Rytunex
+        $possiblePaths = @(
+            "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe",
+            "$env:ProgramFiles\RyTuneX\RyTuneX.exe",
+            "${env:ProgramFiles(x86)}\RyTuneX\RyTuneX.exe"
+        )
+        
+        $rytunexPath = $possiblePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
+        
+        if ($rytunexPath) {
+            Write-Info "Rytunex detected at: $rytunexPath"
+            
+            # Create shortcut in TaskBar folder
+            $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
+            
+            if (-not (Test-Path $taskbarPath)) {
+                New-Item -Path $taskbarPath -ItemType Directory -Force | Out-Null
+            }
+            
+            $shortcutPath = Join-Path $taskbarPath "RyTuneX.lnk"
+            
+            # Create shortcut
+            $shell = New-Object -ComObject WScript.Shell
+            $shortcut = $shell.CreateShortcut($shortcutPath)
+            $shortcut.TargetPath = $rytunexPath
+            $shortcut.WorkingDirectory = [System.IO.Path]::GetDirectoryName($rytunexPath)
+            $shortcut.Save()
+            
+            Write-Success "Rytunex pinned to taskbar successfully."
+            
+            # Restart Explorer to apply changes
+            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+            
+            return $true
+        } else {
+            Write-Warning "Rytunex executable not found. Skipping taskbar pin."
+            return $false
+        }
+    } catch {
+        Write-Warning "Could not pin Rytunex to taskbar: $($_.Exception.Message)"
+        Write-Info "You can manually pin Rytunex by right-clicking it and selecting 'Pin to taskbar'."
         return $false
     }
 }
@@ -1047,11 +1123,15 @@ function Start-Setup {
     
     $choices.SetupMode = $setupMode
     
-    # Lively Wallpaper option (Only for Mode 3 or if requested in Mode 2?)
-    # Keeping it simple: Mode 3 gets the prompt. Mode 2 is "Light", so maybe skip unless we want to be very granular.
-    # Let's stick to the plan: Mode 3 gets full suite prompts.
+    # Lively Wallpaper option (Only for Mode 3)
     if ($setupMode -eq "3") {
         $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+        
+        # Windows 11 Theme Pack option (Only for Windows 10 + Mode 3)
+        $osVersion = [System.Environment]::OSVersion.Version
+        if ($osVersion.Major -eq 10 -and $osVersion.Build -lt 22000) {
+            $choices.ApplyWindows11Theme = Get-YesNoChoice -Title "Apply Windows 11 Theme Pack?" -Description "Transforms Windows 10 appearance to look like Windows 11 (wallpaper, colors, sounds)"
+        }
     }
     
     # Question 16: Steam Deck Tools
@@ -1193,6 +1273,10 @@ function Start-Setup {
         if ($choices.InstallLivelyWallpaper) {
             Install-LivelyWallpaper | Out-Null
         }
+        
+        if ($choices.ApplyWindows11Theme) {
+            Apply-Windows11Theme | Out-Null
+        }
     }
     
     if ($choices.InstallSteamDeckTools) {
@@ -1265,9 +1349,13 @@ function Start-Setup {
         Update-AllSoftware | Out-Null
     }
     
-    # Final touch: Pin Files App to taskbar if installed (Mode 3)
-    if ($choices.SetupMode -eq "3") {
+    # Final touch: Pin apps to taskbar if installed
+    if ($choices.SetupMode -in @("1", "2", "3")) {
         Write-Info "Finalizing taskbar configuration..."
+        Set-RytunexTaskbarPin | Out-Null
+    }
+    
+    if ($choices.SetupMode -eq "3") {
         Set-FilesAppTaskbarPin | Out-Null
     }
     
