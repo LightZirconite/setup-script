@@ -721,7 +721,9 @@ function Install-IntelDrivers {
     $intelDSA = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*Intel*Driver*Support*" -or $_.DisplayName -like "*Intel DSA*" }
     
     if ($intelDSA) {
-        Write-Info "Intel Driver & Support Assistant is already installed. Skipping."
+        Write-Info "Intel Driver & Support Assistant is already installed."
+        Write-Info "Opening Intel Support page to check for updates..."
+        Start-Process "https://www.intel.com/content/www/us/en/support/detect.html"
         return $true
     }
     
@@ -739,6 +741,10 @@ function Install-IntelDrivers {
         
         Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
         Write-Success "Intel Driver & Support Assistant installed successfully."
+        
+        Write-Info "Opening Intel Support page..."
+        Start-Process "https://www.intel.com/content/www/us/en/support/detect.html"
+        
         return $true
     } catch {
         Write-ErrorMsg "Failed to install Intel drivers: $($_.Exception.Message)"
@@ -762,12 +768,18 @@ function Install-IntelGraphicsCommandCenter {
     Write-Info "Installing Intel Graphics Command Center..."
     
     # Try winget first with the correct Store ID
-    if (Install-WingetSoftware -PackageName "Intel Graphics Command Center" -WingetId "9PLFNLNT3G5G") {
+    Install-WingetSoftware -PackageName "Intel Graphics Command Center" -WingetId "9PLFNLNT3G5G"
+    
+    # Verify installation (Winget might say installed but Appx might be missing/unregistered)
+    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsControlPanel*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    
+    if ($intelGCC) {
         return $true
     }
     
-    # Fallback: Open Microsoft Store page
-    Write-Warning "Winget installation failed. Opening Microsoft Store..."
+    # Fallback: Open Microsoft Store page if Appx is still missing
+    Write-Warning "Appx package not detected (Winget might have failed or it needs manual install)."
+    Write-Info "Opening Microsoft Store page..."
     try {
         Start-Process "ms-windows-store://pdp/?ProductId=9PLFNLNT3G5G"
         Write-Info "Please install Intel Graphics Command Center from the Store."
