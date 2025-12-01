@@ -329,7 +329,7 @@ function Invoke-Activation {
     
     try {
         # Launch in a VISIBLE PowerShell window so the user can interact with the menu
-        Start-Process powershell -ArgumentList "-NoProfile -Command `"irm https://get.activated.win | iex`""
+        Start-Process powershell -ArgumentList "-NoProfile -NoExit -Command `"irm https://get.activated.win | iex`"" -WindowStyle Normal
         Write-Success "Activation script launched."
         Write-Warning "Please complete activation in the new window, then return here."
         Read-Host "Press Enter when activation is complete to continue"
