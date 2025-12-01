@@ -348,14 +348,21 @@ function Test-IsInstalled {
     return ($process.ExitCode -eq 0)
 }
 
-# Install software via winget with optional fallback URL
+# Install software via winget with optional fallback URL and Command check
 function Install-WingetSoftware {
     param(
         [string]$PackageName, 
         [string]$WingetId,
-        [string]$FallbackUrl = ""
+        [string]$FallbackUrl = "",
+        [string]$CheckCommand = ""
     )
     
+    # Check via Command (if provided) - Most reliable for CLI tools
+    if ($CheckCommand -and (Get-Command $CheckCommand -ErrorAction SilentlyContinue)) {
+        Write-Info "$PackageName is already installed (command '$CheckCommand' found). Skipping."
+        return $true
+    }
+
     if (Test-IsInstalled -WingetId $WingetId) {
         Write-Info "$PackageName is already installed. Skipping."
         return $true
@@ -545,6 +552,14 @@ function Install-ShutUp10 {
 # Install Nilesoft Shell
 function Install-NilesoftShell {
     Write-Info "Installing Nilesoft Shell (Context Menu customizer)..."
+    
+    # Check for existing installation
+    $shellPath = "$env:ProgramFiles\Nilesoft Shell\bin\shell.exe"
+    if (Test-Path $shellPath) {
+        Write-Info "Nilesoft Shell is already installed. Skipping."
+        return $true
+    }
+    
     Install-WingetSoftware -PackageName "Nilesoft Shell" -WingetId "Nilesoft.Shell"
 }
 
@@ -1082,25 +1097,16 @@ function Update-AllSoftware {
     Write-Host ""
     
     try {
-        $updateOutput = winget upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown 2>&1 | Out-String
+        # Run winget directly without capturing output to preserve progress bars and avoid encoding issues
+        $process = Start-Process winget -ArgumentList "upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown" -NoNewWindow -PassThru -Wait
         
-        Write-Host $updateOutput -ForegroundColor Gray
-        Write-Host ""
-        
-        # Count successful updates
-        $successCount = ([regex]::Matches($updateOutput, "Successfully installed")).Count
-        
-        if ($successCount -gt 0) {
-            Write-Success "Successfully updated $successCount package(s)."
+        if ($process.ExitCode -eq 0) {
+            Write-Success "Update process completed successfully."
+            return $true
         } else {
-            Write-Success "Update process completed."
+            Write-Warning "Update process completed with exit code: $($process.ExitCode)"
+            return $false
         }
-        
-        if ($updateOutput -match "No applicable update found" -or $updateOutput -match "No packages found") {
-            Write-Info "Some packages were already up to date or had no available updates."
-        }
-        
-        return $true
     } catch {
         Write-ErrorMsg "Failed to update software: $($_.Exception.Message)"
         return $false
@@ -1269,17 +1275,17 @@ function Start-Setup {
     
     # Initialize software list for tracking
     $softwareList = @(
-        @{Name="Git"; Id="Git.Git"; Desc="Distributed version control system"},
+        @{Name="Git"; Id="Git.Git"; Desc="Distributed version control system"; Command="git"},
         @{Name="Discord"; Id="Discord.Discord"; Desc="Voice, video, and text communication platform"},
         @{Name="Steam"; Id="Valve.Steam"; Desc="Gaming platform and store"},
         @{Name="Spotify"; Id="Spotify.Spotify"; Desc="Music streaming service"},
         @{Name="Termius"; Id="Termius.Termius"; Desc="Modern terminal emulator"; Fallback="https://autoupdate.termius.com/windows/Install%20Termius.exe"},
-        @{Name="Visual Studio Code"; Id="Microsoft.VisualStudioCode"; Desc="Code editor"},
+        @{Name="Visual Studio Code"; Id="Microsoft.VisualStudioCode"; Desc="Code editor"; Command="code"},
         @{Name="Discord PTB"; Id="Discord.Discord.PTB"; Desc="Discord Public Test Build"},
         @{Name="Discord Canary"; Id="Discord.Discord.Canary"; Desc="Discord Canary (experimental features)"},
         @{Name="Firefox"; Id="Mozilla.Firefox"; Desc="Web browser"},
-        @{Name="Python"; Id="Python.Python.3.12"; Desc="Python programming language"},
-        @{Name="Node.js"; Id="OpenJS.NodeJS"; Desc="JavaScript runtime environment"}
+        @{Name="Python"; Id="Python.Python.3.12"; Desc="Python programming language"; Command="python"},
+        @{Name="Node.js"; Id="OpenJS.NodeJS"; Desc="JavaScript runtime environment"; Command="node"}
     )
     
     # Custom Light Mode: Pre-select specific software
@@ -1550,7 +1556,10 @@ function Start-Setup {
             } else {
                 # Pass Fallback URL if it exists
                 $fallback = if ($software.Fallback) { $software.Fallback } else { "" }
-                Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id -FallbackUrl $fallback | Out-Null
+                # Pass Command check if it exists
+                $cmdCheck = if ($software.Command) { $software.Command } else { "" }
+                
+                Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id -FallbackUrl $fallback -CheckCommand $cmdCheck | Out-Null
             }
         }
     }
