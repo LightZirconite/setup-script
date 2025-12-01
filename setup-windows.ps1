@@ -444,6 +444,30 @@ function Install-BulkCrapUninstaller {
     Install-WingetSoftware -PackageName "Bulk Crap Uninstaller" -WingetId "Klocman.BulkCrapUninstaller"
 }
 
+# Check if software is installed via Registry (Uninstall keys)
+function Test-IsInstalledInRegistry {
+    param([string]$DisplayNamePattern)
+    
+    $uninstallKeys = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall"
+    )
+    
+    foreach ($key in $uninstallKeys) {
+        if (Test-Path $key) {
+            $entries = Get-ChildItem -Path $key -ErrorAction SilentlyContinue
+            foreach ($entry in $entries) {
+                $name = Get-ItemProperty -Path $entry.PSPath -Name "DisplayName" -ErrorAction SilentlyContinue | Select-Object -ExpandProperty DisplayName
+                if ($name -and $name -match $DisplayNamePattern) {
+                    return $true
+                }
+            }
+        }
+    }
+    return $false
+}
+
 # Install Rytunex
 function Install-Rytunex {
     Write-Info "Installing Rytunex (system optimization tool)..."
@@ -465,6 +489,12 @@ function Install-Rytunex {
             Write-Info "Rytunex detected at $path. Skipping..."
             return $true
         }
+    }
+    
+    # Check via Registry
+    if (Test-IsInstalledInRegistry -DisplayNamePattern "RyTuneX") {
+        Write-Info "Rytunex detected in Registry. Skipping..."
+        return $true
     }
     
     # Check if installed via Winget
@@ -865,8 +895,9 @@ function Install-Spotify {
             Invoke-WebRequest -Uri "https://download.scdn.co/SpotifySetup.exe" -OutFile $spotifySetup -UseBasicParsing
             
             Write-Info "Running Spotify installer (as regular user)..."
-            # Use explorer.exe to launch the installer as the logged-in user (de-escalation)
-            Start-Process explorer.exe -ArgumentList "`"$spotifySetup`""
+            # Use runas /trustlevel:0x20000 to force de-escalation to Medium Integrity Level (Basic User)
+            # This is more robust than explorer.exe if the user's environment is elevated
+            Start-Process -FilePath "cmd.exe" -ArgumentList "/c runas /trustlevel:0x20000 `"$spotifySetup`"" -Wait
             
             Write-Warning "Please complete the Spotify installation in the new window."
             Read-Host "Press Enter when Spotify installation is complete to continue"
@@ -904,8 +935,9 @@ pause
 "@
         Set-Content -Path $batchFile -Value $batchContent
         
-        # Launch the batch file using explorer.exe to run as the logged-in user
-        Start-Process explorer.exe -ArgumentList "`"$batchFile`""
+        # Launch the batch file using runas /trustlevel:0x20000 to force de-escalation
+        # This ensures the PowerShell session inside runs as a standard user
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c runas /trustlevel:0x20000 `"$batchFile`""
         
         Write-Success "Spicetify installer launched as regular user."
         Write-Warning "Please wait for the Spicetify installation window to finish."
