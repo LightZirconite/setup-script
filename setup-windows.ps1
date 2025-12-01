@@ -753,28 +753,28 @@ function Install-IntelDrivers {
     }
 }
 
-# Install Intel Graphics Command Center
-function Install-IntelGraphicsCommandCenter {
-    Write-Info "Checking if Intel Graphics Command Center is already installed..."
+# Install Intel Graphics Software (Modern Intel GPU Control Panel)
+function Install-IntelGraphicsSoftware {
+    Write-Info "Checking if Intel Graphics Software is already installed..."
     
     # Check if already installed (AppX package)
-    # Only check for the modern Command Center, not the old Control Panel
-    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsCommandCenter*" }
+    # Look for the modern Intel Graphics Software or fallback to Command Center
+    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
     
-    if ($intelGCC) {
-        Write-Info "Intel Graphics Command Center is already installed. Skipping."
+    if ($intelGS) {
+        Write-Info "Intel Graphics Software/Command Center is already installed. Skipping."
         return $true
     }
     
-    Write-Info "Installing Intel Graphics Command Center..."
+    Write-Info "Installing Intel Graphics Software (Modern GPU Control Panel)..."
     
-    # Try winget first with the correct Store ID
-    Install-WingetSoftware -PackageName "Intel Graphics Command Center" -WingetId "9PLFNLNT3G5G"
+    # Try winget first with the modern Graphics Software Store ID
+    Install-WingetSoftware -PackageName "Intel Graphics Software" -WingetId "9P8K5G2MWW6Z"
     
-    # Verify installation (Winget might say installed but Appx might be missing/unregistered)
-    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsCommandCenter*" }
+    # Verify installation
+    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
     
-    if ($intelGCC) {
+    if ($intelGS) {
         return $true
     }
     
@@ -782,8 +782,8 @@ function Install-IntelGraphicsCommandCenter {
     Write-Warning "Appx package not detected (Winget might have failed or it needs manual install)."
     Write-Info "Opening Microsoft Store page..."
     try {
-        Start-Process "ms-windows-store://pdp/?ProductId=9PLFNLNT3G5G"
-        Write-Info "Please install Intel Graphics Command Center from the Store."
+        Start-Process "ms-windows-store://pdp/?ProductId=9P8K5G2MWW6Z"
+        Write-Info "Please install Intel Graphics Software from the Store."
         return $true
     } catch {
         Write-ErrorMsg "Failed to open Store: $($_.Exception.Message)"
@@ -1341,8 +1341,7 @@ function Start-Setup {
     # Intel GPU Detection
     if ($gpuInfo.HasIntel) {
         Write-Host "🔵 Intel GPU detected!" -ForegroundColor Blue
-        $choices.InstallIntelDrivers = Get-YesNoChoice -Title "Install Intel Driver & Support Assistant?" -Description "For Intel GPUs - auto-detects and updates Intel drivers"
-        $choices.InstallIntelGraphicsCommandCenter = Get-YesNoChoice -Title "Install Intel Graphics Command Center?" -Description "Intel GPU control panel (Store app)"
+        $choices.InstallIntelTools = Get-YesNoChoice -Title "Install Intel GPU Tools?" -Description "Installs Driver & Support Assistant + Intel Graphics Software (Control Panel)"
     }
     
     Write-Host ""
@@ -1503,12 +1502,9 @@ function Start-Setup {
         Install-AMDDrivers | Out-Null
     }
     
-    if ($choices.InstallIntelDrivers) {
+    if ($choices.InstallIntelTools) {
         Install-IntelDrivers | Out-Null
-    }
-    
-    if ($choices.InstallIntelGraphicsCommandCenter) {
-        Install-IntelGraphicsCommandCenter | Out-Null
+        Install-IntelGraphicsSoftware | Out-Null
     }
     
     # LTSC-specific installations
