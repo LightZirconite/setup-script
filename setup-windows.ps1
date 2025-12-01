@@ -758,7 +758,8 @@ function Install-IntelGraphicsCommandCenter {
     Write-Info "Checking if Intel Graphics Command Center is already installed..."
     
     # Check if already installed (AppX package)
-    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsControlPanel*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    # Only check for the modern Command Center, not the old Control Panel
+    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsCommandCenter*" }
     
     if ($intelGCC) {
         Write-Info "Intel Graphics Command Center is already installed. Skipping."
@@ -771,7 +772,7 @@ function Install-IntelGraphicsCommandCenter {
     Install-WingetSoftware -PackageName "Intel Graphics Command Center" -WingetId "9PLFNLNT3G5G"
     
     # Verify installation (Winget might say installed but Appx might be missing/unregistered)
-    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsControlPanel*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsCommandCenter*" }
     
     if ($intelGCC) {
         return $true
