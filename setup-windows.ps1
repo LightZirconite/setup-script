@@ -450,7 +450,8 @@ function Install-Rytunex {
     $pathsToCheck = @(
         "$env:ProgramFiles\RyTuneX\RyTuneX.exe",
         "${env:ProgramFiles(x86)}\RyTuneX\RyTuneX.exe",
-        "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe"
+        "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe",
+        "$env:LOCALAPPDATA\RyTuneX\RyTuneX.exe"
     )
     
     foreach ($path in $pathsToCheck) {
@@ -757,13 +758,19 @@ function Install-IntelDrivers {
 function Install-IntelGraphicsSoftware {
     Write-Info "Checking if Intel Graphics Software is already installed..."
     
-    # Check if already installed (AppX package)
-    # Look for the modern Intel Graphics Software or fallback to Command Center
-    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    # Check ONLY for the modern Intel Graphics Software (IntelGraphicsExperience)
+    # Do NOT consider the old Command Center as a valid substitute
+    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" }
     
     if ($intelGS) {
-        Write-Info "Intel Graphics Software/Command Center is already installed. Skipping."
+        Write-Info "Intel Graphics Software is already installed. Skipping."
         return $true
+    }
+    
+    # Check if old Command Center is present (warn user but proceed with new install)
+    $oldCommandCenter = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsCommandCenter*" }
+    if ($oldCommandCenter) {
+        Write-Warning "Old Intel Graphics Command Center detected. Installing the newer Intel Graphics Software..."
     }
     
     Write-Info "Installing Intel Graphics Software (Modern GPU Control Panel)..."
@@ -772,9 +779,10 @@ function Install-IntelGraphicsSoftware {
     Install-WingetSoftware -PackageName "Intel Graphics Software" -WingetId "9P8K5G2MWW6Z"
     
     # Verify installation
-    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    $intelGS = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsExperience*" }
     
     if ($intelGS) {
+        Write-Success "Intel Graphics Software installed successfully."
         return $true
     }
     
@@ -820,6 +828,48 @@ function Install-UnowhyTools {
 function Install-KDEConnect {
     Write-Info "Installing KDE Connect (device connectivity and integration)..."
     Install-WingetSoftware -PackageName "KDE Connect" -WingetId "KDE.KDEConnect"
+}
+
+# Install Spotify from official source
+function Install-Spotify {
+    Write-Info "Checking if Spotify is already installed..."
+    
+    # Check common Spotify installation paths
+    $spotifyPaths = @(
+        "$env:APPDATA\Spotify\Spotify.exe",
+        "$env:LOCALAPPDATA\Microsoft\WindowsApps\Spotify.exe"
+    )
+    
+    $spotifyInstalled = $false
+    foreach ($path in $spotifyPaths) {
+        if (Test-Path $path) {
+            Write-Info "Spotify detected at $path."
+            $spotifyInstalled = $true
+            break
+        }
+    }
+    
+    if (-not $spotifyInstalled) {
+        Write-Info "Installing Spotify from official source..."
+        try {
+            $tempPath = [System.IO.Path]::GetTempPath()
+            $spotifySetup = Join-Path $tempPath "SpotifySetup.exe"
+            
+            Write-Info "Downloading Spotify installer..."
+            Invoke-WebRequest -Uri "https://download.scdn.co/SpotifySetup.exe" -OutFile $spotifySetup -UseBasicParsing
+            
+            Write-Info "Running Spotify installer..."
+            Start-Process -FilePath $spotifySetup -Wait
+            
+            Remove-Item $spotifySetup -Force -ErrorAction SilentlyContinue
+            Write-Success "Spotify installed successfully."
+        } catch {
+            Write-ErrorMsg "Failed to install Spotify: $($_.Exception.Message)"
+            return $false
+        }
+    }
+    
+    return $true
 }
 
 # Install Spicetify
@@ -1414,22 +1464,19 @@ function Start-Setup {
     }
     
     # Install software via winget
-    $spotifyInstalled = $false
     foreach ($software in $softwareList) {
         $key = "Install$($software.Name -replace '\s','')"
         if ($choices.$key) {
-            # Pass Fallback URL if it exists
-            $fallback = if ($software.Fallback) { $software.Fallback } else { "" }
-            $result = Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id -FallbackUrl $fallback
-            
-            if ($software.Name -eq "Spotify" -and $result) {
-                $spotifyInstalled = $true
+            # Special handling for Spotify: use official installer + Spicetify
+            if ($software.Name -eq "Spotify") {
+                Install-Spotify | Out-Null
+                Install-Spicetify
+            } else {
+                # Pass Fallback URL if it exists
+                $fallback = if ($software.Fallback) { $software.Fallback } else { "" }
+                Install-WingetSoftware -PackageName $software.Name -WingetId $software.Id -FallbackUrl $fallback | Out-Null
             }
         }
-    }
-    
-    if ($spotifyInstalled) {
-        Install-Spicetify
     }
     
     # Install Copilot Instructions
