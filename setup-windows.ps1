@@ -325,12 +325,12 @@ function Install-Office {
 # Activate Windows/Office
 function Invoke-Activation {
     Write-Info "Opening Microsoft Activation Scripts (MAS)..."
-    Write-Warning "Activation is running in the background (Hidden Window)."
+    Write-Warning "Opening MAS in a new visible window. Please select your activation method there."
     
     try {
-        # Launch in a truly hidden PowerShell window
-        Start-Process powershell -ArgumentList "-WindowStyle Hidden -Command `"irm https://get.activated.win | iex`"" -WindowStyle Hidden
-        Write-Success "Activation script launched silently."
+        # Launch in a VISIBLE PowerShell window so the user can interact with the menu
+        Start-Process powershell -ArgumentList "-NoProfile -Command `"irm https://get.activated.win | iex`""
+        Write-Success "Activation script launched."
         Write-Warning "Please complete activation in the new window, then return here."
         Read-Host "Press Enter when activation is complete to continue"
         return $true
@@ -895,9 +895,11 @@ function Install-Spotify {
             Invoke-WebRequest -Uri "https://download.scdn.co/SpotifySetup.exe" -OutFile $spotifySetup -UseBasicParsing
             
             Write-Info "Running Spotify installer (as regular user)..."
-            # Use runas /trustlevel:0x20000 to force de-escalation to Medium Integrity Level (Basic User)
-            # This is more robust than explorer.exe if the user's environment is elevated
-            Start-Process -FilePath "cmd.exe" -ArgumentList "/c runas /trustlevel:0x20000 `"$spotifySetup`"" -Wait
+            
+            # Use Shell.Application to launch the installer. 
+            # This is the most reliable way to de-escalate to the logged-in user's privileges.
+            $shell = New-Object -ComObject Shell.Application
+            $shell.ShellExecute($spotifySetup)
             
             Write-Warning "Please complete the Spotify installation in the new window."
             Read-Host "Press Enter when Spotify installation is complete to continue"
@@ -916,6 +918,13 @@ function Install-Spotify {
 # Install Spicetify
 function Install-Spicetify {
     Write-Info "Installing Spicetify (Spotify customization)..."
+    
+    # Check if Spicetify is already installed
+    if (Test-Path "$env:LOCALAPPDATA\spicetify\spicetify.exe") {
+        Write-Info "Spicetify is already installed. Skipping..."
+        return
+    }
+    
     Write-Info "Launching Spicetify installer in a new window (as non-admin user)..."
     
     try {
