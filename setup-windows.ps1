@@ -911,59 +911,21 @@ function Invoke-Win11Debloat {
         [string]$Mode = "TweaksOnly" # Options: "Full" (Removes Apps), "TweaksOnly" (Keeps Apps)
     )
     
-    Write-Info "Preparing to run Win11Debloat ($Mode)..."
+    Write-Info "Running Win11Debloat ($Mode)..."
     
     try {
-        $params = if ($Mode -eq "Full") { "-RunDefaults" } else { "-RunDefaultsLite" }
+        $arg = if ($Mode -eq "Full") { "-RunDefaults" } else { "-RunDefaultsLite" }
         
-        Write-Info "Fetching latest Win11Debloat release..."
+        Write-Info "Launching Win11Debloat via official wrapper..."
         
-        # Get latest release info
-        $latestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/Raphire/Win11Debloat/releases/latest" -UseBasicParsing
-        $zipAsset = $latestRelease.assets | Where-Object { $_.name -eq "Win11Debloat.zip" } | Select-Object -First 1
+        # Use the official quick launch command in a separate process to ensure isolation
+        # We use 'irm https://debloat.raphi.re/' which redirects to the latest script
+        $command = "& ([scriptblock]::Create((irm 'https://debloat.raphi.re/'))) $arg"
         
-        if (-not $zipAsset) {
-            throw "Could not find Win11Debloat.zip in latest release."
-        }
+        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$command`"" -Wait
         
-        $tempPath = [System.IO.Path]::GetTempPath()
-        $zipPath = Join-Path $tempPath "Win11Debloat.zip"
-        $extractPath = Join-Path $tempPath "Win11Debloat_Install"
-        
-        # Clean previous run
-        if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue }
-        
-        Write-Info "Downloading Win11Debloat.zip..."
-        Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -UseBasicParsing
-        
-        Write-Info "Extracting files..."
-        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-        
-        # Find the .ps1 file (it might be in a subfolder depending on how it was zipped)
-        $scriptFile = Get-ChildItem -Path $extractPath -Filter "Win11Debloat.ps1" -Recurse | Select-Object -First 1
-        
-        if ($scriptFile) {
-            Write-Info "Executing Win11Debloat with $params..."
-            
-            # Run in a new process to ensure clean environment
-            # We must use -File to ensure it runs in the context of the folder (so it finds Assets)
-            $process = Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$($scriptFile.FullName)`"", "$params" -PassThru -Wait
-            
-            if ($process.ExitCode -eq 0) {
-                Write-Success "Win11Debloat execution completed."
-            } else {
-                Write-Warning "Win11Debloat exited with code $($process.ExitCode)."
-            }
-        } else {
-            throw "Win11Debloat.ps1 not found in extracted archive."
-        }
-        
-        # Cleanup
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
-        
+        Write-Success "Win11Debloat finished."
         return $true
-        
     } catch {
         Write-ErrorMsg "Failed to run Win11Debloat: $($_.Exception.Message)"
         return $false
@@ -1099,10 +1061,9 @@ function Install-Spotify {
             $shell.ShellExecute($spotifySetup)
             
             Write-Warning "Please complete the Spotify installation in the new window."
-            Read-Host "Press Enter when Spotify installation is complete to continue"
             
             Remove-Item $spotifySetup -Force -ErrorAction SilentlyContinue
-            Write-Success "Spotify installation step completed."
+            Write-Success "Spotify installation launched."
         } catch {
             Write-ErrorMsg "Failed to install Spotify: $($_.Exception.Message)"
             return $false
@@ -1435,7 +1396,7 @@ function Start-Setup {
     $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office / Extend Updates?" -Description "Opens Microsoft Activation Scripts (MAS) for activation and Windows 10 Extended Security Updates (ESU)"
     
     # Question 2.5: Win11Debloat
-    $runDebloat = Get-YesNoChoice -Title "Run Complete Windows Debloat?" -Description "Removes bloatware (Candy Crush, etc.) AND disables Telemetry/Tracking/Bing. (Recommended)"
+    $runDebloat = Get-YesNoChoice -Title "Run Complete Windows Debloat?" -Description "Removes bloatware & disables Telemetry. (Recommended for Win 10 & 11)"
     
     if ($runDebloat) {
         $choices.DebloatMode = "Full"
@@ -1746,8 +1707,7 @@ function Start-Setup {
     
     if ($choices.Activate) {
         Invoke-Activation | Out-Null
-        Write-Warning "Please complete activation in the new window, then return here."
-        Read-Host "Press Enter when activation is complete to continue"
+        Write-Info "Activation script launched. Please complete it in the opened window."
     }
     
     if ($choices.InstallKDEConnect) {
