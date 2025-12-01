@@ -917,26 +917,22 @@ function Invoke-Win11Debloat {
         # Define the command based on mode
         # -RunDefaults: Removes apps + Tweaks
         # -RunDefaultsLite: Tweaks only (No app removal)
+        # -Silent: Attempts to suppress prompts (if supported/needed)
         
         $params = if ($Mode -eq "Full") { "-RunDefaults" } else { "-RunDefaultsLite" }
         
-        Write-Info "Downloading and executing Win11Debloat with $params..."
+        Write-Info "Executing Win11Debloat via memory (Quick Method) with $params..."
         
-        # We use the "Quick method" command style but with our parameters
-        # Using a new PowerShell process to ensure clean execution environment
-        $scriptCmd = "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1'))"
+        # We use the "Quick method" command style: & ([scriptblock]::Create((irm "url"))) $params
+        # This ensures the script runs in 'Web Mode' and handles its own asset downloading if needed,
+        # avoiding the 'Missing Assets' error that happens when downloading the .ps1 file manually.
         
-        # Construct the full command to run in a separate process
-        # We download the script to a temp file to run it with parameters reliably
-        $tempPath = [System.IO.Path]::GetTempPath()
-        $debloatScript = Join-Path $tempPath "Win11Debloat.ps1"
+        $url = "https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1"
+        $command = "& ([scriptblock]::Create((irm '$url'))) $params"
         
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1" -OutFile $debloatScript -UseBasicParsing
+        # Run in a new PowerShell process to ensure clean environment and visibility
+        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$command`"" -Wait
         
-        Write-Info "Running script..."
-        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$debloatScript`" $params" -Wait
-        
-        Remove-Item $debloatScript -ErrorAction SilentlyContinue
         Write-Success "Win11Debloat execution completed."
         return $true
         
