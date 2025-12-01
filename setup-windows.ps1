@@ -1109,9 +1109,10 @@ function Start-Setup {
     Write-Host "Setup Mode Selection" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Yellow
     Write-Host "1. Custom Light Mode (Recommended)" -ForegroundColor Cyan
-    Write-Host "   Pre-selects: Git, Discord, Steam, Spotify, Termius, VS Code," -ForegroundColor Gray
-    Write-Host "   Python, Node.js, Copilot Instructions, Mesh Agent, Excluded Folder," -ForegroundColor Gray
-    Write-Host "   Rytunex, TranslucentTB, Nilesoft Shell" -ForegroundColor Gray
+    Write-Host "   Pre-selects popular apps: Git, Discord, Steam, Spotify," -ForegroundColor Gray
+    Write-Host "   Termius, VS Code, Python, Node.js" -ForegroundColor Gray
+    Write-Host "   + System tools: Rytunex, TranslucentTB, Nilesoft Shell" -ForegroundColor Gray
+    Write-Host "   (All other options will be asked individually)" -ForegroundColor DarkGray
     Write-Host ""
     Write-Host "2. Manual Selection" -ForegroundColor White
     Write-Host "   Choose each software individually" -ForegroundColor Gray
@@ -1204,33 +1205,21 @@ function Start-Setup {
     }
     
     # Question: Copilot Instructions (Only if VS Code is selected or already installed)
+    # Always ask, regardless of mode
     $vscodeInstalled = (Test-IsInstalled -WingetId "Microsoft.VisualStudioCode") -or (Get-Command "code" -ErrorAction SilentlyContinue)
     if ($choices.InstallVisualStudioCode -or $vscodeInstalled) {
-        if ($useCustomLight) {
-            # Auto-select in Custom Light mode
-            $choices.InstallCopilotInstructions = $true
-        } else {
-            $msg = "Install VS Code Copilot Instructions?"
-            if ($choices.InstallVisualStudioCode -and -not $vscodeInstalled) {
-                $msg = "Install VS Code Copilot Instructions (will be applied after VS Code)?"
-            }
-            $choices.InstallCopilotInstructions = Get-YesNoChoice -Title $msg -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
+        $msg = "Install VS Code Copilot Instructions?"
+        if ($choices.InstallVisualStudioCode -and -not $vscodeInstalled) {
+            $msg = "Install VS Code Copilot Instructions (will be applied after VS Code)?"
         }
+        $choices.InstallCopilotInstructions = Get-YesNoChoice -Title $msg -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
     }
 
-    # Question: Mesh Agent
-    if ($useCustomLight) {
-        $choices.InstallMeshAgent = $true
-    } else {
-        $choices.InstallMeshAgent = Get-YesNoChoice -Title "Install Mesh Agent (Remote Management)?" -Description "Remote management and support agent"
-    }
+    # Question: Mesh Agent (Always ask)
+    $choices.InstallMeshAgent = Get-YesNoChoice -Title "Install Mesh Agent (Remote Management)?" -Description "Remote management and support agent"
     
-    # Question: Defender Exclusion Folder
-    if ($useCustomLight) {
-        $choices.SetupExclusionFolder = $true
-    } else {
-        $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
-    }
+    # Question: Defender Exclusion Folder (Always ask)
+    $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
 
     # Individual Tool Selection
     Write-Host ""
@@ -1240,13 +1229,9 @@ function Start-Setup {
     
     if ($useCustomLight) {
         # Pre-select for Custom Light
-        $choices.InstallBulkCrapUninstaller = $false
         $choices.InstallRytunex = $true
-        $choices.InstallShutUp10 = $false
         $choices.InstallTranslucentTB = $true
-        $choices.InstallFilesApp = $false
         $choices.InstallNilesoftShell = $true
-        $choices.InstallLivelyWallpaper = $false
         
         Write-Host ""
         Write-Host "Pre-selected system tools:" -ForegroundColor Green
@@ -1255,17 +1240,21 @@ function Start-Setup {
         Write-Host "  ✓ Nilesoft Shell (Context Menu)" -ForegroundColor Cyan
         Write-Host ""
         
-        $modifyTools = Get-YesNoChoice -Title "Do you want to customize system tools?" -Description "Add/remove tools like Bulk Crap Uninstaller, ShutUp10, Files App, etc."
+        $modifyTools = Get-YesNoChoice -Title "Do you want to modify these pre-selected tools?" -Description "You can enable/disable each tool individually"
         
         if ($modifyTools) {
-            $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
-            $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
-            $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
-            $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
-            $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
-            $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
-            $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+            $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool (Pre-selected)"
+            $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool (Pre-selected)"
+            $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer (Pre-selected)"
         }
+        
+        # Always ask for additional tools not in Custom Light preset
+        Write-Host ""
+        Write-Host "Additional system tools available:" -ForegroundColor Yellow
+        $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
+        $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
+        $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
+        $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
     } else {
         # Manual mode: ask each
         $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
