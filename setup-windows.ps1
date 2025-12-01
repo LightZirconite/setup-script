@@ -1298,39 +1298,39 @@ function Start-Setup {
     # Steam Deck Detection
     if ($hwInfo.IsSteamDeck) {
         Write-Host "🎮 Steam Deck detected!" -ForegroundColor Cyan
+        $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
     }
-    $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
     
     # Unowhy Detection
     if ($hwInfo.IsUnowhy) {
         Write-Host "💻 Unowhy device detected!" -ForegroundColor Cyan
+        $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
     }
-    $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
     
     # HP Detection
     if ($hwInfo.IsHP) {
         Write-Host "🖥️ HP Computer detected!" -ForegroundColor Cyan
+        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers - auto-detects model and provides drivers"
     }
-    $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers - auto-detects model and provides drivers"
     
     # NVIDIA GPU Detection
     if ($gpuInfo.HasNVIDIA) {
         Write-Host "🎮 NVIDIA GPU detected!" -ForegroundColor Green
+        $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "For NVIDIA GPUs - includes drivers and GeForce Experience replacement"
     }
-    $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "For NVIDIA GPUs - includes drivers and GeForce Experience replacement"
     
     # AMD GPU Detection
     if ($gpuInfo.HasAMD) {
         Write-Host "🔴 AMD GPU detected!" -ForegroundColor Red
+        $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "For AMD/Radeon GPUs - includes drivers and Adrenalin software"
     }
-    $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "For AMD/Radeon GPUs - includes drivers and Adrenalin software"
     
     # Intel GPU Detection
     if ($gpuInfo.HasIntel) {
         Write-Host "🔵 Intel GPU detected!" -ForegroundColor Blue
+        $choices.InstallIntelDrivers = Get-YesNoChoice -Title "Install Intel Driver & Support Assistant?" -Description "For Intel GPUs - auto-detects and updates Intel drivers"
+        $choices.InstallIntelGraphicsCommandCenter = Get-YesNoChoice -Title "Install Intel Graphics Command Center?" -Description "Intel GPU control panel (Store app)"
     }
-    $choices.InstallIntelDrivers = Get-YesNoChoice -Title "Install Intel Driver & Support Assistant?" -Description "For Intel GPUs - auto-detects and updates Intel drivers"
-    $choices.InstallIntelGraphicsCommandCenter = Get-YesNoChoice -Title "Install Intel Graphics Command Center?" -Description "Intel GPU control panel (Store app)"
     
     Write-Host ""
     
