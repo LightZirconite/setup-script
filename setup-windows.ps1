@@ -1145,7 +1145,6 @@ function Start-Setup {
         Write-Info "Custom Light Mode: Pre-selecting recommended software..."
         
         # Pre-select software
-        $choices.InstallKDEConnect = $false
         foreach ($software in $softwareList) {
             $key = "Install$($software.Name -replace '\s','')"
             # Pre-select: Git, Discord, Steam, Spotify, Termius, VS Code, Python, Node.js
@@ -1156,24 +1155,36 @@ function Start-Setup {
             }
         }
         
-        # Display selected items
+        # Pre-select system tools
+        $choices.InstallRytunex = $true
+        $choices.InstallTranslucentTB = $true
+        $choices.InstallNilesoftShell = $true
+        
+        # Display all pre-selected items
         Write-Host ""
-        Write-Host "Pre-selected software:" -ForegroundColor Green
+        Write-Host "Pre-selected in Custom Light Mode:" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "Software:" -ForegroundColor Cyan
         foreach ($software in $softwareList) {
             $key = "Install$($software.Name -replace '\s','')"
             if ($choices.$key) {
-                Write-Host "  ✓ $($software.Name)" -ForegroundColor Cyan
+                Write-Host "  ✓ $($software.Name)" -ForegroundColor White
             }
         }
-        
-        # Ask if user wants to modify selection
         Write-Host ""
-        $modifySelection = Get-YesNoChoice -Title "Do you want to add or remove software from this list?" -Description "You can customize the pre-selected software"
+        Write-Host "System Tools:" -ForegroundColor Cyan
+        Write-Host "  ✓ Rytunex (System optimization)" -ForegroundColor White
+        Write-Host "  ✓ TranslucentTB (Taskbar transparency)" -ForegroundColor White
+        Write-Host "  ✓ Nilesoft Shell (Context Menu)" -ForegroundColor White
+        
+        # Ask if user wants to modify selection (ONE TIME)
+        Write-Host ""
+        $modifySelection = Get-YesNoChoice -Title "Modify Custom Light selection?" -Description "You can customize which software and tools to install"
         
         if ($modifySelection) {
             Write-Host ""
             Write-Host "============================================" -ForegroundColor Yellow
-            Write-Host "Modify Selection" -ForegroundColor White
+            Write-Host "Customize Installation" -ForegroundColor White
             Write-Host "============================================" -ForegroundColor Yellow
             
             # Show current selection and allow toggling
@@ -1189,9 +1200,18 @@ function Start-Setup {
                 $toggle = Get-YesNoChoice -Title "Install $($software.Name)?" -Description "Current: $currentStatus"
                 $choices.$key = $toggle
             }
+            
+            # System tools modification
+            Write-Host ""
+            Write-Host "System Tools:" -ForegroundColor Cyan
+            $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool [SELECTED]"
+            $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool [SELECTED]"
+            $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer [SELECTED]"
         }
         
-        # Ask for KDE Connect separately
+        # Ask for KDE Connect separately (not in preset)
+        Write-Host ""
+        Write-Host "Additional software (not in Custom Light preset):" -ForegroundColor Yellow
         $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
         
     } else {
@@ -1221,36 +1241,14 @@ function Start-Setup {
     # Question: Defender Exclusion Folder (Always ask)
     $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
 
-    # Individual Tool Selection
+    # Additional Tool Selection (not in Custom Light preset)
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
-    Write-Host "System Tools Selection" -ForegroundColor White
+    Write-Host "Additional System Tools" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Yellow
     
     if ($useCustomLight) {
-        # Pre-select for Custom Light
-        $choices.InstallRytunex = $true
-        $choices.InstallTranslucentTB = $true
-        $choices.InstallNilesoftShell = $true
-        
-        Write-Host ""
-        Write-Host "Pre-selected system tools:" -ForegroundColor Green
-        Write-Host "  ✓ Rytunex (System optimization)" -ForegroundColor Cyan
-        Write-Host "  ✓ TranslucentTB (Taskbar transparency)" -ForegroundColor Cyan
-        Write-Host "  ✓ Nilesoft Shell (Context Menu)" -ForegroundColor Cyan
-        Write-Host ""
-        
-        $modifyTools = Get-YesNoChoice -Title "Do you want to modify these pre-selected tools?" -Description "You can enable/disable each tool individually"
-        
-        if ($modifyTools) {
-            $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool (Pre-selected)"
-            $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool (Pre-selected)"
-            $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer (Pre-selected)"
-        }
-        
-        # Always ask for additional tools not in Custom Light preset
-        Write-Host ""
-        Write-Host "Additional system tools available:" -ForegroundColor Yellow
+        # For Custom Light: Only ask for tools NOT in the preset
         $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
         $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
         $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
