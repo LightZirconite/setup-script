@@ -4,7 +4,7 @@
 .DESCRIPTION
     Comprehensive Windows setup script with version detection, software installation, and configuration options
 .NOTES
-    Version: 1.0.0
+    Version: 2.0.0
     Author: Setup Script
     Requires: PowerShell 5.1+ running as Administrator
 #>
@@ -42,7 +42,7 @@ function Show-Banner {
     Write-Host @"
 ================================================================
           Windows Setup & Configuration Script
-                     Version 1.0.0
+                     Version 2.0.0
 ================================================================
 "@ -ForegroundColor Cyan
     Write-Host ""
