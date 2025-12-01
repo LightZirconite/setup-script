@@ -873,6 +873,196 @@ function Install-UnowhyTools {
     Install-WingetSoftware -PackageName "Unowhy Tools" -WingetId "Unowhy Tools"
 }
 
+# --- NEW FEATURES START ---
+
+# Automated BIOS/Driver Updates
+function Install-BiosUpdates {
+    param([hashtable]$HardwareInfo)
+    
+    Write-Info "Checking for BIOS and Driver updates..."
+    
+    if ($HardwareInfo.Manufacturer -like "*Dell*") {
+        Write-Info "Dell system detected. Installing Dell Command | Update..."
+        if (Install-WingetSoftware -PackageName "Dell Command | Update" -WingetId "Dell.CommandUpdate") {
+            Write-Info "Running Dell Command | Update CLI..."
+            try {
+                # Attempt to find the CLI executable
+                $dcuPath = "C:\Program Files\Dell\CommandUpdate\dcu-cli.exe"
+                if (-not (Test-Path $dcuPath)) {
+                    $dcuPath = "C:\Program Files (x86)\Dell\CommandUpdate\dcu-cli.exe"
+                }
+                
+                if (Test-Path $dcuPath) {
+                    Write-Info "Scanning for updates (this may take a while)..."
+                    Start-Process -FilePath $dcuPath -ArgumentList "/applyUpdates -silent" -Wait
+                    Write-Success "Dell updates applied."
+                } else {
+                    Write-Warning "Dell Command | Update CLI not found. Please run the application manually."
+                }
+            } catch {
+                Write-ErrorMsg "Failed to run Dell updates: $($_.Exception.Message)"
+            }
+        }
+    }
+    elseif ($HardwareInfo.Manufacturer -like "*Lenovo*") {
+        Write-Info "Lenovo system detected. Installing Lenovo System Update..."
+        if (Install-WingetSoftware -PackageName "Lenovo System Update" -WingetId "Lenovo.SystemUpdate") {
+            Write-Info "Launching Lenovo System Update..."
+            try {
+                # Lenovo System Update usually requires user interaction for the first run or specific CLI flags
+                # tvsu.exe is the main executable
+                $tvsuPath = "${env:ProgramFiles(x86)}\Lenovo\System Update\tvsu.exe"
+                if (Test-Path $tvsuPath) {
+                    Start-Process -FilePath $tvsuPath
+                    Write-Success "Lenovo System Update launched. Please follow the on-screen instructions."
+                } else {
+                    Write-Warning "Lenovo System Update executable not found."
+                }
+            } catch {
+                Write-ErrorMsg "Failed to launch Lenovo updates: $($_.Exception.Message)"
+            }
+        }
+    }
+    elseif ($HardwareInfo.IsHP) {
+        Write-Info "HP system detected. Opening HP Driver Support page..."
+        Start-Process "https://support.hp.com/drivers"
+        Write-Success "HP Driver page opened."
+    }
+    else {
+        Write-Info "Generic or unknown manufacturer ($($HardwareInfo.Manufacturer)). Opening Windows Update..."
+        Start-Process "ms-settings:windowsupdate"
+        Write-Info "Please check for 'Optional Updates' in Windows Update for BIOS/Firmware."
+    }
+}
+
+# Win11Debloat Integration
+function Invoke-Win11Debloat {
+    param(
+        [string]$Mode = "TweaksOnly" # Options: "Full" (Removes Apps), "TweaksOnly" (Keeps Apps)
+    )
+    
+    Write-Info "Preparing to run Win11Debloat ($Mode)..."
+    
+    try {
+        # Define the command based on mode
+        # -RunDefaults: Removes apps + Tweaks
+        # -RunDefaultsLite: Tweaks only (No app removal)
+        
+        $params = if ($Mode -eq "Full") { "-RunDefaults" } else { "-RunDefaultsLite" }
+        
+        Write-Info "Downloading and executing Win11Debloat with $params..."
+        
+        # We use the "Quick method" command style but with our parameters
+        # Using a new PowerShell process to ensure clean execution environment
+        $scriptCmd = "iex ((New-Object System.Net.WebClient).DownloadString('https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1'))"
+        
+        # Construct the full command to run in a separate process
+        # We download the script to a temp file to run it with parameters reliably
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $debloatScript = Join-Path $tempPath "Win11Debloat.ps1"
+        
+        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1" -OutFile $debloatScript -UseBasicParsing
+        
+        Write-Info "Running script..."
+        Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$debloatScript`" $params" -Wait
+        
+        Remove-Item $debloatScript -ErrorAction SilentlyContinue
+        Write-Success "Win11Debloat execution completed."
+        return $true
+        
+    } catch {
+        Write-ErrorMsg "Failed to run Win11Debloat: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Gaming Stack (Visual C++ & DirectX & Optimizations)
+function Install-GamingStack {
+    Write-Info "Installing Gaming Stack (Runtimes & Optimizations)..."
+    
+    # 1. Visual C++ Redistributables (AIO or Latest)
+    # Installing the latest supported 2015-2022 redist is usually enough for modern games
+    Write-Info "Installing Visual C++ 2015-2022 Redistributable..."
+    Install-WingetSoftware -PackageName "Visual C++ 2015-2022 Redist" -WingetId "Microsoft.VCRedist.2015+.x64"
+    
+    # 2. DirectX
+    # Winget has a DirectX Runtime package
+    Write-Info "Installing DirectX End-User Runtime..."
+    Install-WingetSoftware -PackageName "DirectX Runtime" -WingetId "Microsoft.DirectX"
+    
+    # 3. Game Mode Optimization
+    Write-Info "Enabling Windows Game Mode..."
+    try {
+        $regPath = "HKCU:\Software\Microsoft\GameBar"
+        if (-not (Test-Path $regPath)) {
+            New-Item -Path $regPath -Force | Out-Null
+        }
+        # AllowAutoGameMode = 1 (On)
+        Set-ItemProperty -Path $regPath -Name "AllowAutoGameMode" -Value 1 -Type DWord -Force
+        
+        # High Performance Power Plan (Ultimate Performance if available, otherwise High Performance)
+        # This is a bit aggressive, maybe just ensure High Performance is available
+        # powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 (Ultimate Performance)
+        
+        Write-Success "Game Mode enabled."
+    } catch {
+        Write-Warning "Could not set Game Mode registry key."
+    }
+}
+
+# WSL Setup
+function Install-WSL {
+    Write-Info "Setting up Windows Subsystem for Linux (WSL)..."
+    
+    if (Get-Command wsl -ErrorAction SilentlyContinue) {
+        Write-Info "WSL command detected. Checking status..."
+        $wslStatus = wsl --status | Out-String
+        if ($wslStatus -match "Default Distribution") {
+            Write-Info "WSL appears to be already installed and configured."
+            return $true
+        }
+    }
+    
+    Write-Info "Installing WSL (this will require a restart)..."
+    try {
+        # wsl --install installs Ubuntu by default
+        Start-Process "wsl" -ArgumentList "--install" -Wait
+        Write-Success "WSL installation command executed."
+        Write-Warning "A system restart is REQUIRED to complete WSL installation."
+    } catch {
+        Write-ErrorMsg "Failed to run WSL install: $($_.Exception.Message)"
+    }
+}
+
+# Install Nerd Fonts
+function Install-NerdFonts {
+    Write-Info "Installing MesloLGS Nerd Font (for modern terminal icons)..."
+    Install-WingetSoftware -PackageName "MesloLGS NF" -WingetId "RyanLlamas.MesloLGSNF"
+}
+
+# Setup Ultimate Performance Power Plan
+function Setup-PowerPlan {
+    Write-Info "Setting up 'Ultimate Performance' power plan..."
+    try {
+        # Duplicate the Ultimate Performance scheme
+        $output = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>&1
+        
+        if ($output -match "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})") {
+            $newGuid = $matches[1]
+            Write-Info "Ultimate Performance plan created (GUID: $newGuid)."
+            powercfg -setactive $newGuid
+            Write-Success "Power plan set to Ultimate Performance."
+        } else {
+            Write-Warning "Could not create Ultimate Performance plan. Trying High Performance..."
+            powercfg -setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
+        }
+    } catch {
+        Write-ErrorMsg "Failed to set power plan: $($_.Exception.Message)"
+    }
+}
+
+# --- NEW FEATURES END ---
+
 # Install KDE Connect
 function Install-KDEConnect {
     Write-Info "Installing KDE Connect (device connectivity and integration)..."
@@ -1250,6 +1440,15 @@ function Start-Setup {
     # Question 2: Activate Windows/Office
     $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office / Extend Updates?" -Description "Opens Microsoft Activation Scripts (MAS) for activation and Windows 10 Extended Security Updates (ESU)"
     
+    # Question 2.5: Win11Debloat
+    $runDebloat = Get-YesNoChoice -Title "Run Complete Windows Debloat?" -Description "Removes bloatware (Candy Crush, etc.) AND disables Telemetry/Tracking/Bing. (Recommended)"
+    
+    if ($runDebloat) {
+        $choices.DebloatMode = "Full"
+    } else {
+        $choices.DebloatMode = "None"
+    }
+
     # Question 3: Setup Mode Selection
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
@@ -1388,6 +1587,18 @@ function Start-Setup {
     # Question: Defender Exclusion Folder (Always ask)
     $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
 
+    # Question: Gaming Stack
+    $choices.InstallGamingStack = Get-YesNoChoice -Title "Install Gaming Stack?" -Description "Visual C++ Runtimes (AIO), DirectX, and Game Mode optimization"
+
+    # Question: Power Plan
+    $choices.SetupPowerPlan = Get-YesNoChoice -Title "Enable Ultimate Performance Mode?" -Description "Optimizes Windows power settings for maximum speed"
+
+    # Question: WSL
+    $choices.InstallWSL = Get-YesNoChoice -Title "Install WSL (Linux Subsystem)?" -Description "Enables running Linux on Windows (Requires Restart)"
+
+    # Question: Nerd Fonts
+    $choices.InstallNerdFonts = Get-YesNoChoice -Title "Install Nerd Fonts?" -Description "Required for icons in modern terminals (Oh My Posh, etc.)"
+
     # Additional Tool Selection (not in Custom Light preset)
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
@@ -1450,11 +1661,9 @@ function Start-Setup {
         $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
     }
     
-    # HP Detection
-    if ($hwInfo.IsHP) {
-        Write-Host "🖥️ HP Computer detected!" -ForegroundColor Cyan
-        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers - auto-detects model and provides drivers"
-    }
+    # BIOS/Driver Updates
+    Write-Host "🖥️ System: $($hwInfo.Manufacturer) $($hwInfo.Model)" -ForegroundColor Cyan
+    $choices.InstallBiosUpdates = Get-YesNoChoice -Title "Check for BIOS & Driver Updates?" -Description "Uses official tools for Dell/Lenovo, or support page/Windows Update for others"
     
     # NVIDIA GPU Detection
     if ($gpuInfo.HasNVIDIA) {
@@ -1523,6 +1732,11 @@ function Start-Setup {
     Write-Host ""
     
     Start-Sleep -Seconds 2
+
+    # Win11Debloat
+    if ($choices.DebloatMode -and $choices.DebloatMode -ne "None") {
+        Invoke-Win11Debloat -Mode $choices.DebloatMode | Out-Null
+    }
 
     # Update winget sources to ensure packages are found
     Write-Info "Updating winget sources..."
@@ -1620,8 +1834,24 @@ function Start-Setup {
         Install-UnowhyTools | Out-Null
     }
     
-    if ($choices.InstallHPDrivers) {
-        Install-HPDrivers | Out-Null
+    if ($choices.InstallBiosUpdates) {
+        Install-BiosUpdates -HardwareInfo $hwInfo | Out-Null
+    }
+
+    if ($choices.InstallGamingStack) {
+        Install-GamingStack | Out-Null
+    }
+
+    if ($choices.SetupPowerPlan) {
+        Setup-PowerPlan | Out-Null
+    }
+
+    if ($choices.InstallWSL) {
+        Install-WSL | Out-Null
+    }
+
+    if ($choices.InstallNerdFonts) {
+        Install-NerdFonts | Out-Null
     }
     
     if ($choices.InstallNVIDIADrivers) {
