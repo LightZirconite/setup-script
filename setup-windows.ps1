@@ -71,6 +71,50 @@ function Get-WindowsEdition {
     }
 }
 
+# Detect Hardware Manufacturer
+function Get-HardwareInfo {
+    try {
+        $computerSystem = Get-CimInstance -ClassName Win32_ComputerSystem
+        $manufacturer = $computerSystem.Manufacturer
+        $model = $computerSystem.Model
+        
+        $info = @{
+            Manufacturer = $manufacturer
+            Model = $model
+            IsHP = ($manufacturer -like "*HP*" -or $manufacturer -like "*Hewlett*")
+            IsUnowhy = ($manufacturer -like "*Unowhy*" -or $model -like "*Y13*")
+            IsSteamDeck = ($model -like "*Jupiter*" -or $model -like "*Steam Deck*")
+        }
+        
+        return $info
+    } catch {
+        return @{ Manufacturer="Unknown"; Model="Unknown"; IsHP=$false; IsUnowhy=$false; IsSteamDeck=$false }
+    }
+}
+
+# Detect GPU (NVIDIA or AMD)
+function Get-GPUInfo {
+    try {
+        $gpus = Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name
+        
+        $hasNvidia = $false
+        $hasAMD = $false
+        
+        foreach ($gpu in $gpus) {
+            if ($gpu -like "*NVIDIA*" -or $gpu -like "*GeForce*" -or $gpu -like "*Quadro*" -or $gpu -like "*RTX*" -or $gpu -like "*GTX*") {
+                $hasNvidia = $true
+            }
+            if ($gpu -like "*AMD*" -or $gpu -like "*Radeon*" -or $gpu -like "*ATI*") {
+                $hasAMD = $true
+            }
+        }
+        
+        return @{ HasNVIDIA = $hasNvidia; HasAMD = $hasAMD; GPUs = $gpus }
+    } catch {
+        return @{ HasNVIDIA = $false; HasAMD = $false; GPUs = @() }
+    }
+}
+
 # Yes/No prompt function with description
 function Get-YesNoChoice {
     param(
@@ -599,6 +643,61 @@ function Install-StoreApps {
     Write-Success "Store apps installation initiated"
 }
 
+# Install NVIDIA Drivers
+function Install-NVIDIADrivers {
+    Write-Info "Installing NVIDIA App (GPU drivers and control panel)..."
+    
+    # Try winget first
+    if (Install-WingetSoftware -PackageName "NVIDIA App" -WingetId "Nvidia.GeForceExperience") {
+        return $true
+    }
+    
+    # Fallback: Open NVIDIA download page
+    Write-Warning "Winget installation failed. Opening NVIDIA download page..."
+    try {
+        Start-Process "https://www.nvidia.com/en-us/software/nvidia-app/"
+        Write-Info "Please download and install NVIDIA App from the opened page."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to open NVIDIA page: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Install AMD Drivers
+function Install-AMDDrivers {
+    Write-Info "Installing AMD Adrenalin (GPU drivers and control panel)..."
+    
+    # Try winget first
+    if (Install-WingetSoftware -PackageName "AMD Software" -WingetId "AMD.AMDSoftware") {
+        return $true
+    }
+    
+    # Fallback: Open AMD download page
+    Write-Warning "Winget installation failed. Opening AMD download page..."
+    try {
+        Start-Process "https://www.amd.com/en/support"
+        Write-Info "Please download and install AMD Software from the opened page."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to open AMD page: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Open HP Driver Detection Page
+function Install-HPDrivers {
+    Write-Info "Opening HP Driver Support page..."
+    try {
+        Start-Process "https://support.hp.com/drivers"
+        Write-Success "HP Driver page opened. The site will auto-detect your PC model."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to open HP page: $($_.Exception.Message)"
+        return $false
+    }
+}
+
 # Install Steam Deck Tools
 function Install-SteamDeckTools {
     Write-Info "Installing Steam Deck Tools (provides drivers and fan control for Steam Deck on Windows)..."
@@ -915,10 +1014,27 @@ function Start-Setup {
     # Question 2: Activate Windows/Office
     $choices.Activate = Get-YesNoChoice -Title "Activate Windows/Office / Extend Updates?" -Description "Opens Microsoft Activation Scripts (MAS) for activation and Windows 10 Extended Security Updates (ESU)"
     
-    # Question 3: KDE Connect (asked early in sequence)
-    $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
+    # Question 3: Setup Mode Selection
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Yellow
+    Write-Host "Setup Mode Selection" -ForegroundColor White
+    Write-Host "============================================" -ForegroundColor Yellow
+    Write-Host "1. Custom Light Mode (Recommended)" -ForegroundColor Cyan
+    Write-Host "   Pre-selects: Git, Discord, Steam, Spotify, Termius, VS Code," -ForegroundColor Gray
+    Write-Host "   Python, Node.js, Copilot Instructions, Mesh Agent, Excluded Folder," -ForegroundColor Gray
+    Write-Host "   Rytunex, TranslucentTB, Nilesoft Shell" -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "2. Manual Selection" -ForegroundColor White
+    Write-Host "   Choose each software individually" -ForegroundColor Gray
+    Write-Host "============================================" -ForegroundColor Yellow
     
-    # Question 4-14: Software installations via winget
+    do {
+        $setupChoice = Read-Host "Enter choice (1-2)"
+    } while ($setupChoice -notin @("1", "2"))
+    
+    $useCustomLight = ($setupChoice -eq "1")
+    
+    # Initialize software list for tracking
     $softwareList = @(
         @{Name="Git"; Id="Git.Git"; Desc="Distributed version control system"},
         @{Name="Discord"; Id="Discord.Discord"; Desc="Voice, video, and text communication platform"},
@@ -933,40 +1049,144 @@ function Start-Setup {
         @{Name="Node.js"; Id="OpenJS.NodeJS"; Desc="JavaScript runtime environment"}
     )
     
-    foreach ($software in $softwareList) {
-        $key = "Install$($software.Name -replace '\s','')"
-        $choices.$key = Get-YesNoChoice -Title "Install $($software.Name)?" -Description $software.Desc
+    # Custom Light Mode: Pre-select specific software
+    if ($useCustomLight) {
+        Write-Host ""
+        Write-Info "Custom Light Mode: Pre-selecting recommended software..."
+        
+        # Pre-select software
+        $choices.InstallKDEConnect = $false
+        foreach ($software in $softwareList) {
+            $key = "Install$($software.Name -replace '\s','')"
+            # Pre-select: Git, Discord, Steam, Spotify, Termius, VS Code, Python, Node.js
+            if ($software.Name -in @("Git", "Discord", "Steam", "Spotify", "Termius", "Visual Studio Code", "Python", "Node.js")) {
+                $choices.$key = $true
+            } else {
+                $choices.$key = $false
+            }
+        }
+        
+        # Display selected items
+        Write-Host ""
+        Write-Host "Pre-selected software:" -ForegroundColor Green
+        foreach ($software in $softwareList) {
+            $key = "Install$($software.Name -replace '\s','')"
+            if ($choices.$key) {
+                Write-Host "  ✓ $($software.Name)" -ForegroundColor Cyan
+            }
+        }
+        
+        # Ask if user wants to modify selection
+        Write-Host ""
+        $modifySelection = Get-YesNoChoice -Title "Do you want to add or remove software from this list?" -Description "You can customize the pre-selected software"
+        
+        if ($modifySelection) {
+            Write-Host ""
+            Write-Host "============================================" -ForegroundColor Yellow
+            Write-Host "Modify Selection" -ForegroundColor White
+            Write-Host "============================================" -ForegroundColor Yellow
+            
+            # Show current selection and allow toggling
+            foreach ($software in $softwareList) {
+                $key = "Install$($software.Name -replace '\s','')"
+                $currentStatus = if ($choices.$key) { "[SELECTED]" } else { "[NOT SELECTED]" }
+                $statusColor = if ($choices.$key) { "Green" } else { "Gray" }
+                
+                Write-Host ""
+                Write-Host "$currentStatus $($software.Name)" -ForegroundColor $statusColor -NoNewline
+                Write-Host " - $($software.Desc)" -ForegroundColor Gray
+                
+                $toggle = Get-YesNoChoice -Title "Install $($software.Name)?" -Description "Current: $currentStatus"
+                $choices.$key = $toggle
+            }
+        }
+        
+        # Ask for KDE Connect separately
+        $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
+        
+    } else {
+        # Manual Selection Mode: Ask each question
+        $choices.InstallKDEConnect = Get-YesNoChoice -Title "Install KDE Connect?" -Description "Device connectivity and integration (share files, notifications, etc.)"
+        
+        foreach ($software in $softwareList) {
+            $key = "Install$($software.Name -replace '\s','')"
+            $choices.$key = Get-YesNoChoice -Title "Install $($software.Name)?" -Description $software.Desc
+        }
     }
     
     # Question: Copilot Instructions (Only if VS Code is selected or already installed)
     $vscodeInstalled = (Test-IsInstalled -WingetId "Microsoft.VisualStudioCode") -or (Get-Command "code" -ErrorAction SilentlyContinue)
     if ($choices.InstallVisualStudioCode -or $vscodeInstalled) {
-        $msg = "Install VS Code Copilot Instructions?"
-        if ($choices.InstallVisualStudioCode -and -not $vscodeInstalled) {
-            $msg = "Install VS Code Copilot Instructions (will be applied after VS Code)?"
+        if ($useCustomLight) {
+            # Auto-select in Custom Light mode
+            $choices.InstallCopilotInstructions = $true
+        } else {
+            $msg = "Install VS Code Copilot Instructions?"
+            if ($choices.InstallVisualStudioCode -and -not $vscodeInstalled) {
+                $msg = "Install VS Code Copilot Instructions (will be applied after VS Code)?"
+            }
+            $choices.InstallCopilotInstructions = Get-YesNoChoice -Title $msg -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
         }
-        $choices.InstallCopilotInstructions = Get-YesNoChoice -Title $msg -Description "Adds custom rules/instructions for GitHub Copilot from LightZirconite/copilot-rules"
     }
 
-    # Question 14: Mesh Agent
-    $choices.InstallMeshAgent = Get-YesNoChoice -Title "Install Mesh Agent (Remote Management)?" -Description "Remote management and support agent"
+    # Question: Mesh Agent
+    if ($useCustomLight) {
+        $choices.InstallMeshAgent = $true
+    } else {
+        $choices.InstallMeshAgent = Get-YesNoChoice -Title "Install Mesh Agent (Remote Management)?" -Description "Remote management and support agent"
+    }
     
     # Question: Defender Exclusion Folder
-    $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
+    if ($useCustomLight) {
+        $choices.SetupExclusionFolder = $true
+    } else {
+        $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
+    }
 
-    # Individual Tool Selection (Replaces Modes)
+    # Individual Tool Selection
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
-    Write-Host "Tool Selection Phase" -ForegroundColor White
+    Write-Host "System Tools Selection" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Yellow
     
-    $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
-    $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
-    $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
-    $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
-    $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
-    $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
-    $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+    if ($useCustomLight) {
+        # Pre-select for Custom Light
+        $choices.InstallBulkCrapUninstaller = $false
+        $choices.InstallRytunex = $true
+        $choices.InstallShutUp10 = $false
+        $choices.InstallTranslucentTB = $true
+        $choices.InstallFilesApp = $false
+        $choices.InstallNilesoftShell = $true
+        $choices.InstallLivelyWallpaper = $false
+        
+        Write-Host ""
+        Write-Host "Pre-selected system tools:" -ForegroundColor Green
+        Write-Host "  ✓ Rytunex (System optimization)" -ForegroundColor Cyan
+        Write-Host "  ✓ TranslucentTB (Taskbar transparency)" -ForegroundColor Cyan
+        Write-Host "  ✓ Nilesoft Shell (Context Menu)" -ForegroundColor Cyan
+        Write-Host ""
+        
+        $modifyTools = Get-YesNoChoice -Title "Do you want to customize system tools?" -Description "Add/remove tools like Bulk Crap Uninstaller, ShutUp10, Files App, etc."
+        
+        if ($modifyTools) {
+            $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
+            $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
+            $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
+            $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
+            $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
+            $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
+            $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+        }
+    } else {
+        # Manual mode: ask each
+        $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
+        $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
+        $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
+        $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
+        $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
+        $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
+        $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+    }
 
     # Windows 11 Specific: FluentFlyout
     # Check if Windows 11 (Build >= 22000)
@@ -980,13 +1200,65 @@ function Start-Setup {
         $choices.ApplyWindows11Theme = Get-YesNoChoice -Title "Apply Windows 11 Theme Pack?" -Description "Transforms Windows 10 appearance to look like Windows 11"
     }
     
-    # Question 16: Steam Deck Tools
-    $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
+    # Hardware-Specific Detection & Questions
+    Write-Host ""
+    Write-Host "============================================" -ForegroundColor Magenta
+    Write-Host "Hardware Detection & Drivers" -ForegroundColor White
+    Write-Host "============================================" -ForegroundColor Magenta
     
-    # Question 17: Unowhy Tools
-    $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for certain computers"
+    $hwInfo = Get-HardwareInfo
+    $gpuInfo = Get-GPUInfo
     
-    # Question 18: System Update
+    Write-Info "Detected: $($hwInfo.Manufacturer) $($hwInfo.Model)"
+    if ($gpuInfo.GPUs.Count -gt 0) {
+        Write-Info "GPU(s): $($gpuInfo.GPUs -join ', ')"
+    }
+    Write-Host ""
+    
+    # Steam Deck Detection
+    if ($hwInfo.IsSteamDeck) {
+        Write-Host "🎮 Steam Deck detected!" -ForegroundColor Cyan
+        $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "Recommended for Steam Deck: Provides drivers and fan control"
+    } else {
+        # Ask manually if not detected
+        $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
+    }
+    
+    # Unowhy Detection
+    if ($hwInfo.IsUnowhy) {
+        Write-Host "💻 Unowhy device detected!" -ForegroundColor Cyan
+        $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Recommended for Unowhy: Device-specific drivers"
+    } else {
+        $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
+    }
+    
+    # HP Detection
+    if ($hwInfo.IsHP) {
+        Write-Host "🖥️ HP Computer detected!" -ForegroundColor Cyan
+        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "HP's site will auto-detect your model and offer the latest drivers"
+    } else {
+        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers only - auto-detects model and provides drivers"
+    }
+    
+    # NVIDIA GPU Detection
+    if ($gpuInfo.HasNVIDIA) {
+        Write-Host "🎮 NVIDIA GPU detected!" -ForegroundColor Green
+        $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "Recommended: Latest NVIDIA drivers and control panel"
+    } else {
+        $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "For NVIDIA GPUs - includes drivers and GeForce Experience replacement"
+    }
+    
+    # AMD GPU Detection
+    if ($gpuInfo.HasAMD) {
+        Write-Host "🔴 AMD GPU detected!" -ForegroundColor Red
+        $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "Recommended: Latest AMD drivers and control software"
+    } else {
+        $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "For AMD/Radeon GPUs - includes drivers and Adrenalin software"
+    }
+    
+    Write-Host ""
+    
+    # Question: System Update
     $choices.UpdateAllSoftware = Get-YesNoChoice -Title "Update all computer software?" -Description "Updates all installed software via winget"
     
     # LTSC-specific questions
@@ -1150,6 +1422,18 @@ function Start-Setup {
     
     if ($choices.InstallUnowhyTools) {
         Install-UnowhyTools | Out-Null
+    }
+    
+    if ($choices.InstallHPDrivers) {
+        Install-HPDrivers | Out-Null
+    }
+    
+    if ($choices.InstallNVIDIADrivers) {
+        Install-NVIDIADrivers | Out-Null
+    }
+    
+    if ($choices.InstallAMDDrivers) {
+        Install-AMDDrivers | Out-Null
     }
     
     # LTSC-specific installations
