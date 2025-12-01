@@ -453,7 +453,11 @@ function Install-Rytunex {
         "$env:ProgramFiles\RyTuneX\RyTuneX.exe",
         "${env:ProgramFiles(x86)}\RyTuneX\RyTuneX.exe",
         "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe",
-        "$env:LOCALAPPDATA\RyTuneX\RyTuneX.exe"
+        "$env:LOCALAPPDATA\RyTuneX\RyTuneX.exe",
+        "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\RyTuneX.lnk",
+        "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\RyTuneX.lnk",
+        "$env:USERPROFILE\Desktop\RyTuneX.lnk",
+        "$env:PUBLIC\Desktop\RyTuneX.lnk"
     )
     
     foreach ($path in $pathsToCheck) {
@@ -860,11 +864,15 @@ function Install-Spotify {
             Write-Info "Downloading Spotify installer..."
             Invoke-WebRequest -Uri "https://download.scdn.co/SpotifySetup.exe" -OutFile $spotifySetup -UseBasicParsing
             
-            Write-Info "Running Spotify installer..."
-            Start-Process -FilePath $spotifySetup -Wait
+            Write-Info "Running Spotify installer (as regular user)..."
+            # Use explorer.exe to launch the installer as the logged-in user (de-escalation)
+            Start-Process explorer.exe -ArgumentList "`"$spotifySetup`""
+            
+            Write-Warning "Please complete the Spotify installation in the new window."
+            Read-Host "Press Enter when Spotify installation is complete to continue"
             
             Remove-Item $spotifySetup -Force -ErrorAction SilentlyContinue
-            Write-Success "Spotify installed successfully."
+            Write-Success "Spotify installation step completed."
         } catch {
             Write-ErrorMsg "Failed to install Spotify: $($_.Exception.Message)"
             return $false
@@ -880,17 +888,31 @@ function Install-Spicetify {
     Write-Info "Launching Spicetify installer in a new window (as non-admin user)..."
     
     try {
-        # Get the current user's username
-        $currentUser = [System.Environment]::UserName
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $batchFile = Join-Path $tempPath "install_spicetify.bat"
         
-        # Command to resize window and run installer
-        $command = "& { `$host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(100, 30); iwr -useb https://raw.githubusercontent.com/spicetify/cli/main/install.ps1 | iex; Read-Host 'Press Enter to close...' }"
+        # Create a batch file to run the PowerShell command
+        # This ensures it runs in a new window and keeps it open
+        $batchContent = @"
+@echo off
+title Spicetify Installer
+echo Installing Spicetify...
+powershell -NoProfile -Command "iwr -useb https://raw.githubusercontent.com/spicetify/cli/main/install.ps1 | iex"
+echo.
+echo Installation complete.
+pause
+"@
+        Set-Content -Path $batchFile -Value $batchContent
         
-        # Launch as non-elevated user using explorer.exe trick
-        # This de-escalates from admin to regular user context
-        Start-Process explorer.exe -ArgumentList "powershell.exe -NoProfile -Command `"$command`""
+        # Launch the batch file using explorer.exe to run as the logged-in user
+        Start-Process explorer.exe -ArgumentList "`"$batchFile`""
         
         Write-Success "Spicetify installer launched as regular user."
+        Write-Warning "Please wait for the Spicetify installation window to finish."
+        
+        # Clean up batch file after a delay (to allow it to start)
+        Start-Sleep -Seconds 5
+        # We can't delete it immediately if it's running, but it's in temp so it's fine.
     } catch {
         Write-ErrorMsg "Failed to launch Spicetify installer: $($_.Exception.Message)"
     }
