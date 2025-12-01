@@ -920,11 +920,14 @@ function Invoke-Win11Debloat {
         
         # Use the official quick launch command in a separate process to ensure isolation
         # We use 'irm https://debloat.raphi.re/' which redirects to the latest script
+        # Running with -WindowStyle Hidden to hide the downloader/wrapper window.
+        # The actual Win11Debloat script will spawn in its own visible window.
         $command = "& ([scriptblock]::Create((irm 'https://debloat.raphi.re/'))) $arg"
         
-        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$command`"" -Wait
+        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$command`"" -WindowStyle Hidden
         
-        Write-Success "Win11Debloat finished."
+        Write-Success "Win11Debloat launched in a new window."
+        Write-Warning "Please check the new window to confirm execution (Press Enter there)."
         return $true
     } catch {
         Write-ErrorMsg "Failed to run Win11Debloat: $($_.Exception.Message)"
