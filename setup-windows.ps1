@@ -328,9 +328,11 @@ function Invoke-Activation {
     Write-Warning "Activation is running in the background (Hidden Window)."
     
     try {
-        # Added -WindowStyle Hidden as requested to make it invisible
-        Start-Process powershell -ArgumentList "-WindowStyle Hidden", "-Command", "irm https://get.activated.win | iex" -Verb RunAs -WindowStyle Hidden
+        # Launch in a truly hidden PowerShell window
+        Start-Process powershell -ArgumentList "-WindowStyle Hidden -Command `"irm https://get.activated.win | iex`"" -WindowStyle Hidden
         Write-Success "Activation script launched silently."
+        Write-Warning "Please complete activation in the new window, then return here."
+        Read-Host "Press Enter when activation is complete to continue"
         return $true
     } catch {
         Write-ErrorMsg "Failed to open activation script: $($_.Exception.Message)"
@@ -875,12 +877,23 @@ function Install-Spotify {
 # Install Spicetify
 function Install-Spicetify {
     Write-Info "Installing Spicetify (Spotify customization)..."
-    Write-Info "Launching Spicetify installer in a new window..."
+    Write-Info "Launching Spicetify installer in a new window (as non-admin user)..."
     
-    # Command to resize window and run installer
-    $command = "& { `$host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(100, 30); iwr -useb https://raw.githubusercontent.com/spicetify/cli/main/install.ps1 | iex; Read-Host 'Press Enter to close...' }"
-    
-    Start-Process powershell -ArgumentList "-NoProfile", "-Command", $command
+    try {
+        # Get the current user's username
+        $currentUser = [System.Environment]::UserName
+        
+        # Command to resize window and run installer
+        $command = "& { `$host.UI.RawUI.WindowSize = New-Object Management.Automation.Host.Size(100, 30); iwr -useb https://raw.githubusercontent.com/spicetify/cli/main/install.ps1 | iex; Read-Host 'Press Enter to close...' }"
+        
+        # Launch as non-elevated user using explorer.exe trick
+        # This de-escalates from admin to regular user context
+        Start-Process explorer.exe -ArgumentList "powershell.exe -NoProfile -Command `"$command`""
+        
+        Write-Success "Spicetify installer launched as regular user."
+    } catch {
+        Write-ErrorMsg "Failed to launch Spicetify installer: $($_.Exception.Message)"
+    }
 }
 
 # Install Copilot Instructions for VS Code
