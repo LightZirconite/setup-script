@@ -92,13 +92,14 @@ function Get-HardwareInfo {
     }
 }
 
-# Detect GPU (NVIDIA or AMD)
+# Detect GPU (NVIDIA, AMD, Intel)
 function Get-GPUInfo {
     try {
         $gpus = Get-CimInstance -ClassName Win32_VideoController | Select-Object -ExpandProperty Name
         
         $hasNvidia = $false
         $hasAMD = $false
+        $hasIntel = $false
         
         foreach ($gpu in $gpus) {
             if ($gpu -like "*NVIDIA*" -or $gpu -like "*GeForce*" -or $gpu -like "*Quadro*" -or $gpu -like "*RTX*" -or $gpu -like "*GTX*") {
@@ -107,11 +108,14 @@ function Get-GPUInfo {
             if ($gpu -like "*AMD*" -or $gpu -like "*Radeon*" -or $gpu -like "*ATI*") {
                 $hasAMD = $true
             }
+            if ($gpu -like "*Intel*" -or $gpu -like "*UHD*" -or $gpu -like "*Iris*" -or $gpu -like "*HD Graphics*") {
+                $hasIntel = $true
+            }
         }
         
-        return @{ HasNVIDIA = $hasNvidia; HasAMD = $hasAMD; GPUs = $gpus }
+        return @{ HasNVIDIA = $hasNvidia; HasAMD = $hasAMD; HasIntel = $hasIntel; GPUs = $gpus }
     } catch {
-        return @{ HasNVIDIA = $false; HasAMD = $false; GPUs = @() }
+        return @{ HasNVIDIA = $false; HasAMD = $false; HasIntel = $false; GPUs = @() }
     }
 }
 
@@ -645,6 +649,16 @@ function Install-StoreApps {
 
 # Install NVIDIA Drivers
 function Install-NVIDIADrivers {
+    Write-Info "Checking if NVIDIA software is already installed..."
+    
+    # Check if NVIDIA GeForce Experience or NVIDIA App is installed
+    $nvidiaApp = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*NVIDIA*" -and ($_.DisplayName -like "*GeForce Experience*" -or $_.DisplayName -like "*NVIDIA App*") }
+    
+    if ($nvidiaApp) {
+        Write-Info "NVIDIA software is already installed. Skipping."
+        return $true
+    }
+    
     Write-Info "Installing NVIDIA App (GPU drivers and control panel)..."
     
     # Try winget first
@@ -666,6 +680,16 @@ function Install-NVIDIADrivers {
 
 # Install AMD Drivers
 function Install-AMDDrivers {
+    Write-Info "Checking if AMD software is already installed..."
+    
+    # Check if AMD Adrenalin or AMD Software is installed
+    $amdApp = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*AMD*" -and ($_.DisplayName -like "*Adrenalin*" -or $_.DisplayName -like "*Software*" -or $_.DisplayName -like "*Radeon*") }
+    
+    if ($amdApp) {
+        Write-Info "AMD software is already installed. Skipping."
+        return $true
+    }
+    
     Write-Info "Installing AMD Adrenalin (GPU drivers and control panel)..."
     
     # Try winget first
@@ -681,6 +705,71 @@ function Install-AMDDrivers {
         return $true
     } catch {
         Write-ErrorMsg "Failed to open AMD page: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+# Install Intel Drivers (Driver & Support Assistant)
+function Install-IntelDrivers {
+    Write-Info "Checking if Intel Driver & Support Assistant is already installed..."
+    
+    # Check if already installed
+    $intelDSA = Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*" -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "*Intel*Driver*Support*" -or $_.DisplayName -like "*Intel DSA*" }
+    
+    if ($intelDSA) {
+        Write-Info "Intel Driver & Support Assistant is already installed. Skipping."
+        return $true
+    }
+    
+    Write-Info "Installing Intel Driver & Support Assistant..."
+    
+    try {
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $installerPath = Join-Path $tempPath "Intel-DSA-Installer.exe"
+        
+        Write-Info "Downloading Intel Driver & Support Assistant..."
+        Invoke-WebRequest -Uri "https://dsadata.intel.com/installer" -OutFile $installerPath -UseBasicParsing
+        
+        Write-Info "Running Intel installer..."
+        Start-Process -FilePath $installerPath -Wait
+        
+        Remove-Item $installerPath -Force -ErrorAction SilentlyContinue
+        Write-Success "Intel Driver & Support Assistant installed successfully."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to install Intel drivers: $($_.Exception.Message)"
+        Write-Info "You can manually download from: https://www.intel.com/content/www/us/en/support/detect.html"
+        return $false
+    }
+}
+
+# Install Intel Graphics Command Center
+function Install-IntelGraphicsCommandCenter {
+    Write-Info "Checking if Intel Graphics Command Center is already installed..."
+    
+    # Check if already installed (AppX package)
+    $intelGCC = Get-AppxPackage | Where-Object { $_.Name -like "*IntelGraphicsControlPanel*" -or $_.Name -like "*IntelGraphicsCommandCenter*" }
+    
+    if ($intelGCC) {
+        Write-Info "Intel Graphics Command Center is already installed. Skipping."
+        return $true
+    }
+    
+    Write-Info "Installing Intel Graphics Command Center..."
+    
+    # Try winget first with the correct Store ID
+    if (Install-WingetSoftware -PackageName "Intel Graphics Command Center" -WingetId "9PLFNLNT3G5G") {
+        return $true
+    }
+    
+    # Fallback: Open Microsoft Store page
+    Write-Warning "Winget installation failed. Opening Microsoft Store..."
+    try {
+        Start-Process "ms-windows-store://pdp/?ProductId=9PLFNLNT3G5G"
+        Write-Info "Please install Intel Graphics Command Center from the Store."
+        return $true
+    } catch {
+        Write-ErrorMsg "Failed to open Store: $($_.Exception.Message)"
         return $false
     }
 }
@@ -1218,43 +1307,39 @@ function Start-Setup {
     # Steam Deck Detection
     if ($hwInfo.IsSteamDeck) {
         Write-Host "🎮 Steam Deck detected!" -ForegroundColor Cyan
-        $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "Recommended for Steam Deck: Provides drivers and fan control"
-    } else {
-        # Ask manually if not detected
-        $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
     }
+    $choices.InstallSteamDeckTools = Get-YesNoChoice -Title "Install Steam Deck Tools?" -Description "For Steam Deck on Windows - provides drivers and fan control"
     
     # Unowhy Detection
     if ($hwInfo.IsUnowhy) {
         Write-Host "💻 Unowhy device detected!" -ForegroundColor Cyan
-        $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Recommended for Unowhy: Device-specific drivers"
-    } else {
-        $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
     }
+    $choices.InstallUnowhyTools = Get-YesNoChoice -Title "Install Unowhy Tools?" -Description "Device-specific drivers for Unowhy computers"
     
     # HP Detection
     if ($hwInfo.IsHP) {
         Write-Host "🖥️ HP Computer detected!" -ForegroundColor Cyan
-        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "HP's site will auto-detect your model and offer the latest drivers"
-    } else {
-        $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers only - auto-detects model and provides drivers"
     }
+    $choices.InstallHPDrivers = Get-YesNoChoice -Title "Open HP Driver Support Page?" -Description "For HP computers - auto-detects model and provides drivers"
     
     # NVIDIA GPU Detection
     if ($gpuInfo.HasNVIDIA) {
         Write-Host "🎮 NVIDIA GPU detected!" -ForegroundColor Green
-        $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "Recommended: Latest NVIDIA drivers and control panel"
-    } else {
-        $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "For NVIDIA GPUs - includes drivers and GeForce Experience replacement"
     }
+    $choices.InstallNVIDIADrivers = Get-YesNoChoice -Title "Install NVIDIA App & Drivers?" -Description "For NVIDIA GPUs - includes drivers and GeForce Experience replacement"
     
     # AMD GPU Detection
     if ($gpuInfo.HasAMD) {
         Write-Host "🔴 AMD GPU detected!" -ForegroundColor Red
-        $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "Recommended: Latest AMD drivers and control software"
-    } else {
-        $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "For AMD/Radeon GPUs - includes drivers and Adrenalin software"
     }
+    $choices.InstallAMDDrivers = Get-YesNoChoice -Title "Install AMD Adrenalin & Drivers?" -Description "For AMD/Radeon GPUs - includes drivers and Adrenalin software"
+    
+    # Intel GPU Detection
+    if ($gpuInfo.HasIntel) {
+        Write-Host "🔵 Intel GPU detected!" -ForegroundColor Blue
+    }
+    $choices.InstallIntelDrivers = Get-YesNoChoice -Title "Install Intel Driver & Support Assistant?" -Description "For Intel GPUs - auto-detects and updates Intel drivers"
+    $choices.InstallIntelGraphicsCommandCenter = Get-YesNoChoice -Title "Install Intel Graphics Command Center?" -Description "Intel GPU control panel (Store app)"
     
     Write-Host ""
     
@@ -1434,6 +1519,14 @@ function Start-Setup {
     
     if ($choices.InstallAMDDrivers) {
         Install-AMDDrivers | Out-Null
+    }
+    
+    if ($choices.InstallIntelDrivers) {
+        Install-IntelDrivers | Out-Null
+    }
+    
+    if ($choices.InstallIntelGraphicsCommandCenter) {
+        Install-IntelGraphicsCommandCenter | Out-Null
     }
     
     # LTSC-specific installations
