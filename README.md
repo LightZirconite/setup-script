@@ -29,7 +29,6 @@ irm https://github.com/LightZirconite/setup-script/raw/main/setup-windows.ps1 | 
 - ✅ Administrator privilege verification
 
 ### Automatic Configuration
-- ✅ **LoginLight** automatically installed in all modes (startup manager)
 - ✅ **O&O ShutUp10++** automatically configured with recommended privacy settings
 - ✅ Silent background installation without user interaction
 
@@ -54,26 +53,13 @@ irm https://github.com/LightZirconite/setup-script/raw/main/setup-windows.ps1 | 
 
 #### Configuration Modes
 
-**Mode 1 - Performance Mode (Pure):**
-- Bulk Crap Uninstaller (deep software removal)
-- Rytunex (system optimization)
-- O&O ShutUp10++ (automatic privacy/telemetry configuration)
-- LoginLight (automatic startup manager)
-- Windows LTSC recommendation
+**1. Custom Light Mode (Recommended):**
+- Pre-selects popular software: Git, Discord, Steam, Spotify, Termius, VS Code, Python, Node.js
+- Pre-selects system tools: Rytunex, TranslucentTB, Nilesoft Shell
+- Allows customization of these selections
 
-**Mode 2 - Performance + Light Style:**
-- All Performance Mode tools
-- TranslucentTB (taskbar transparency)
-
-**Mode 3 - Performance + Full Style (Ultimate):**
-- All Performance Mode tools
-- WinPaletter (Windows theming)
-- TranslucentTB (taskbar transparency)
-- Files App (modern file manager)
-- Nilesoft Shell (better context menu)
-- Windhawk (Windows mods)
-- Modern/Fluent Flyouts (better UI overlays)
-- Lively Wallpaper (optional animated wallpapers)
+**2. Manual Selection:**
+- Choose each software and tool individually
 
 #### Device-Specific Tools
 - Steam Deck Tools (drivers and fan control)

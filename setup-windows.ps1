@@ -615,11 +615,14 @@ function Install-StoreApp {
     }
 }
 
-# Install TranslucentTB and Files App automatically
-function Install-StoreApps {
+# Install TranslucentTB
+function Install-TranslucentTB {
     Write-Info "Installing TranslucentTB (taskbar transparency tool)..."
     Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9"
-    
+}
+
+# Install Files App
+function Install-FilesApp {
     Write-Info "Installing Files App (modern file manager)..."
     
     try {
@@ -633,18 +636,19 @@ function Install-StoreApps {
         try {
             Add-AppxPackage -AppInstallerFile $appInstallerFile -ErrorAction Stop
             Write-Success "Files App installed successfully."
+            return $true
         } catch {
             Write-Warning "Silent installation failed. Opening installer for manual installation..."
             Start-Process $appInstallerFile
             Write-Info "Please click 'Install' in the window that opened."
+            return $true
         }
         
         Remove-Item $appInstallerFile -ErrorAction SilentlyContinue
     } catch {
         Write-ErrorMsg "Failed to download/install Files App: $($_.Exception.Message)"
+        return $false
     }
-    
-    Write-Success "Store apps installation initiated"
 }
 
 # Install NVIDIA Drivers
@@ -1443,33 +1447,11 @@ function Start-Setup {
     }
     
     if ($choices.InstallTranslucentTB) {
-        Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9" | Out-Null
+        Install-TranslucentTB | Out-Null
     }
     
     if ($choices.InstallFilesApp) {
-        # Install Files App manually since Install-StoreApps was removed/refactored
-        Write-Info "Installing Files App (modern file manager)..."
-        try {
-            $tempPath = [System.IO.Path]::GetTempPath()
-            $appInstallerFile = Join-Path $tempPath "Files.stable.appinstaller"
-            
-            Write-Info "Downloading Files App installer..."
-            Invoke-WebRequest -Uri "https://files.community/appinstallers/Files.stable.appinstaller" -OutFile $appInstallerFile -UseBasicParsing
-            
-            Write-Info "Installing Files App..."
-            try {
-                Add-AppxPackage -AppInstallerFile $appInstallerFile -ErrorAction Stop
-                Write-Success "Files App installed successfully."
-            } catch {
-                Write-Warning "Silent installation failed. Opening installer for manual installation..."
-                Start-Process $appInstallerFile
-                Write-Info "Please click 'Install' in the window that opened."
-            }
-            
-            Remove-Item $appInstallerFile -ErrorAction SilentlyContinue
-        } catch {
-            Write-ErrorMsg "Failed to download/install Files App: $($_.Exception.Message)"
-        }
+        Install-FilesApp | Out-Null
     }
     
     if ($choices.InstallNilesoftShell) {
