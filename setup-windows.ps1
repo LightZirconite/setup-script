@@ -325,14 +325,12 @@ function Install-Office {
 # Activate Windows/Office
 function Invoke-Activation {
     Write-Info "Opening Microsoft Activation Scripts (MAS)..."
-    Write-Warning "Opening MAS in a new visible window. Please select your activation method there."
     
     try {
-        # Launch in a VISIBLE PowerShell window so the user can interact with the menu
-        Start-Process powershell -ArgumentList "-NoProfile -NoExit -Command `"irm https://get.activated.win | iex`"" -WindowStyle Normal
-        Write-Success "Activation script launched."
-        Write-Warning "Please complete activation in the new window, then return here."
-        Read-Host "Press Enter when activation is complete to continue"
+        # Launch in a HIDDEN PowerShell window as requested
+        # The user implies MAS opens its own interface or they want it hidden
+        Start-Process powershell -ArgumentList "-NoProfile -Command `"irm https://get.activated.win | iex`"" -WindowStyle Hidden
+        Write-Success "Activation script launched in background."
         return $true
     } catch {
         Write-ErrorMsg "Failed to open activation script: $($_.Exception.Message)"
