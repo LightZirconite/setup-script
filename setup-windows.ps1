@@ -914,26 +914,54 @@ function Invoke-Win11Debloat {
     Write-Info "Preparing to run Win11Debloat ($Mode)..."
     
     try {
-        # Define the command based on mode
-        # -RunDefaults: Removes apps + Tweaks
-        # -RunDefaultsLite: Tweaks only (No app removal)
-        # -Silent: Attempts to suppress prompts (if supported/needed)
-        
         $params = if ($Mode -eq "Full") { "-RunDefaults" } else { "-RunDefaultsLite" }
         
-        Write-Info "Executing Win11Debloat via memory (Quick Method) with $params..."
+        Write-Info "Fetching latest Win11Debloat release..."
         
-        # We use the "Quick method" command style: & ([scriptblock]::Create((irm "url"))) $params
-        # This ensures the script runs in 'Web Mode' and handles its own asset downloading if needed,
-        # avoiding the 'Missing Assets' error that happens when downloading the .ps1 file manually.
+        # Get latest release info
+        $latestRelease = Invoke-RestMethod -Uri "https://api.github.com/repos/Raphire/Win11Debloat/releases/latest" -UseBasicParsing
+        $zipAsset = $latestRelease.assets | Where-Object { $_.name -eq "Win11Debloat.zip" } | Select-Object -First 1
         
-        $url = "https://raw.githubusercontent.com/Raphire/Win11Debloat/master/Win11Debloat.ps1"
-        $command = "& ([scriptblock]::Create((irm '$url'))) $params"
+        if (-not $zipAsset) {
+            throw "Could not find Win11Debloat.zip in latest release."
+        }
         
-        # Run in a new PowerShell process to ensure clean environment and visibility
-        Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", "`"$command`"" -Wait
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $zipPath = Join-Path $tempPath "Win11Debloat.zip"
+        $extractPath = Join-Path $tempPath "Win11Debloat_Install"
         
-        Write-Success "Win11Debloat execution completed."
+        # Clean previous run
+        if (Test-Path $extractPath) { Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue }
+        
+        Write-Info "Downloading Win11Debloat.zip..."
+        Invoke-WebRequest -Uri $zipAsset.browser_download_url -OutFile $zipPath -UseBasicParsing
+        
+        Write-Info "Extracting files..."
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+        
+        # Find the .ps1 file (it might be in a subfolder depending on how it was zipped)
+        $scriptFile = Get-ChildItem -Path $extractPath -Filter "Win11Debloat.ps1" -Recurse | Select-Object -First 1
+        
+        if ($scriptFile) {
+            Write-Info "Executing Win11Debloat with $params..."
+            
+            # Run in a new process to ensure clean environment
+            # We must use -File to ensure it runs in the context of the folder (so it finds Assets)
+            $process = Start-Process powershell.exe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$($scriptFile.FullName)`"", "$params" -PassThru -Wait
+            
+            if ($process.ExitCode -eq 0) {
+                Write-Success "Win11Debloat execution completed."
+            } else {
+                Write-Warning "Win11Debloat exited with code $($process.ExitCode)."
+            }
+        } else {
+            throw "Win11Debloat.ps1 not found in extracted archive."
+        }
+        
+        # Cleanup
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        
         return $true
         
     } catch {
