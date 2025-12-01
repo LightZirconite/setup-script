@@ -517,36 +517,6 @@ function Install-Rytunex {
     return $false
 }
 
-# Install O&O ShutUp10++ and apply recommended settings
-function Install-ShutUp10 {
-    Write-Info "Installing O&O ShutUp10++ (Privacy & Telemetry control)..."
-    
-    try {
-        $tempPath = [System.IO.Path]::GetTempPath()
-        $shutupExe = Join-Path $tempPath "OOSU10.exe"
-        $configFile = Join-Path $tempPath "ooshutup10_recommended.cfg"
-        
-        Write-Info "Downloading O&O ShutUp10++..."
-        Invoke-WebRequest -Uri "https://dl5.oo-software.com/files/ooshutup10/OOSU10.exe" -OutFile $shutupExe -UseBasicParsing
-        
-        Write-Info "Downloading recommended configuration..."
-        Invoke-WebRequest -Uri "https://raw.githubusercontent.com/LightZirconite/setup-script/main/ooshutup10_recommended.cfg" -OutFile $configFile -UseBasicParsing
-        
-        Write-Info "Applying recommended privacy settings..."
-        Start-Process -FilePath $shutupExe -ArgumentList "$configFile /quiet" -Wait
-        
-        Write-Success "O&O ShutUp10++ installed and configured successfully."
-        
-        Remove-Item $shutupExe -ErrorAction SilentlyContinue
-        Remove-Item $configFile -ErrorAction SilentlyContinue
-        
-        return $true
-    } catch {
-        Write-ErrorMsg "Failed to install/configure ShutUp10++: $($_.Exception.Message)"
-        return $false
-    }
-}
-
 # Install Nilesoft Shell
 function Install-NilesoftShell {
     Write-Info "Installing Nilesoft Shell (Context Menu customizer)..."
@@ -1505,6 +1475,9 @@ function Start-Setup {
         $choices.InstallRytunex = $true
         $choices.InstallTranslucentTB = $true
         $choices.InstallNilesoftShell = $true
+        $choices.InstallGamingStack = $true
+        $choices.SetupPowerPlan = $true
+        $choices.InstallNerdFonts = $true
         
         # Display all pre-selected items
         Write-Host ""
@@ -1522,6 +1495,9 @@ function Start-Setup {
         Write-Host "  ✓ Rytunex (System optimization)" -ForegroundColor White
         Write-Host "  ✓ TranslucentTB (Taskbar transparency)" -ForegroundColor White
         Write-Host "  ✓ Nilesoft Shell (Context Menu)" -ForegroundColor White
+        Write-Host "  ✓ Gaming Stack (VC++ / DirectX / Game Mode)" -ForegroundColor White
+        Write-Host "  ✓ Ultimate Performance Power Plan" -ForegroundColor White
+        Write-Host "  ✓ Nerd Fonts (MesloLGS NF)" -ForegroundColor White
         
         # Ask if user wants to modify selection (ONE TIME)
         Write-Host ""
@@ -1553,6 +1529,9 @@ function Start-Setup {
             $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool [SELECTED]"
             $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool [SELECTED]"
             $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer [SELECTED]"
+            $choices.InstallGamingStack = Get-YesNoChoice -Title "Install Gaming Stack?" -Description "Visual C++ / DirectX / Game Mode [SELECTED]"
+            $choices.SetupPowerPlan = Get-YesNoChoice -Title "Enable Ultimate Performance?" -Description "Power Plan [SELECTED]"
+            $choices.InstallNerdFonts = Get-YesNoChoice -Title "Install Nerd Fonts?" -Description "Terminal Icons [SELECTED]"
         }
         
         # Ask for KDE Connect separately (not in preset)
@@ -1587,18 +1566,6 @@ function Start-Setup {
     # Question: Defender Exclusion Folder (Always ask)
     $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
 
-    # Question: Gaming Stack
-    $choices.InstallGamingStack = Get-YesNoChoice -Title "Install Gaming Stack?" -Description "Visual C++ Runtimes (AIO), DirectX, and Game Mode optimization"
-
-    # Question: Power Plan
-    $choices.SetupPowerPlan = Get-YesNoChoice -Title "Enable Ultimate Performance Mode?" -Description "Optimizes Windows power settings for maximum speed"
-
-    # Question: WSL
-    $choices.InstallWSL = Get-YesNoChoice -Title "Install WSL (Linux Subsystem)?" -Description "Enables running Linux on Windows (Requires Restart)"
-
-    # Question: Nerd Fonts
-    $choices.InstallNerdFonts = Get-YesNoChoice -Title "Install Nerd Fonts?" -Description "Required for icons in modern terminals (Oh My Posh, etc.)"
-
     # Additional Tool Selection (not in Custom Light preset)
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
@@ -1608,19 +1575,25 @@ function Start-Setup {
     if ($useCustomLight) {
         # For Custom Light: Only ask for tools NOT in the preset
         $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
-        $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
         $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
         $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
     } else {
         # Manual mode: ask each
         $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
         $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
-        $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
         $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
         $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
         $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
         $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+        
+        # Manual Mode: Ask for Gaming/Power/Nerd (since they are not pre-selected)
+        $choices.InstallGamingStack = Get-YesNoChoice -Title "Install Gaming Stack?" -Description "Visual C++ Runtimes (AIO), DirectX, and Game Mode optimization"
+        $choices.SetupPowerPlan = Get-YesNoChoice -Title "Enable Ultimate Performance Mode?" -Description "Optimizes Windows power settings for maximum speed"
+        $choices.InstallNerdFonts = Get-YesNoChoice -Title "Install Nerd Fonts?" -Description "Required for icons in modern terminals (Oh My Posh, etc.)"
     }
+
+    # Question: WSL
+    $choices.InstallWSL = Get-YesNoChoice -Title "Install WSL (Linux Subsystem)?" -Description "Enables running Linux on Windows (Requires Restart)"
 
     # Windows 11 Specific: FluentFlyout
     # Check if Windows 11 (Build >= 22000)
@@ -1798,10 +1771,6 @@ function Start-Setup {
         Install-Rytunex | Out-Null
     }
     
-    if ($choices.InstallShutUp10) {
-        Install-ShutUp10 | Out-Null
-    }
-    
     if ($choices.InstallTranslucentTB) {
         Install-TranslucentTB | Out-Null
     }
@@ -1971,10 +1940,6 @@ function Show-InstalledToolsSummary {
     
     if ($Choices.InstallRytunex) {
         $toolsInstalled += @{Name="Rytunex"; Desc="System optimization and tweaking tool"; Source="GitHub: rayenghanmi/RyTuneX"}
-    }
-    
-    if ($Choices.InstallShutUp10) {
-        $toolsInstalled += @{Name="O&O ShutUp10++"; Desc="Privacy configurator"; Source="oo-software.com"}
     }
     
     if ($Choices.InstallFilesApp) {
