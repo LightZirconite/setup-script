@@ -947,7 +947,25 @@ function Install-GamingStack {
     # 2. DirectX
     # Winget has a DirectX Runtime package
     Write-Info "Installing DirectX End-User Runtime..."
-    Install-WingetSoftware -PackageName "DirectX Runtime" -WingetId "Microsoft.DirectX"
+    # DirectX often fails with exit code -1978335226 if a newer version is already present or a reboot is pending.
+    # We'll try to install, but treat that specific exit code as a success/warning rather than a hard failure.
+    
+    if (Test-IsInstalled -WingetId "Microsoft.DirectX") {
+        Write-Info "DirectX Runtime is already installed. Skipping."
+    } else {
+        Write-Host "[INFO] Installing DirectX Runtime..." -NoNewline -ForegroundColor Cyan
+        $dxProcess = Start-Process winget -ArgumentList "install --id Microsoft.DirectX --accept-package-agreements --accept-source-agreements --silent --force" -WindowStyle Hidden -PassThru -Wait
+        
+        if ($dxProcess.ExitCode -eq 0) {
+            Write-Host " [OK]" -ForegroundColor Green
+        } elseif ($dxProcess.ExitCode -eq -1978335226) { # 0x8A150006
+            Write-Host " [SKIPPED]" -ForegroundColor Yellow
+            Write-Info "DirectX installation skipped (likely already installed or newer version present)."
+        } else {
+            Write-Host " [FAILED]" -ForegroundColor Red
+            Write-ErrorMsg "DirectX install failed with code: $($dxProcess.ExitCode)"
+        }
+    }
     
     # 3. Game Mode Optimization
     Write-Info "Enabling Windows Game Mode..."
@@ -996,7 +1014,41 @@ function Install-WSL {
 # Install Nerd Fonts
 function Install-NerdFonts {
     Write-Info "Installing MesloLGS Nerd Font (for modern terminal icons)..."
-    Install-WingetSoftware -PackageName "MesloLGS NF" -WingetId "RyanLlamas.MesloLGSNF"
+    # Try the specific ID first, but handle the hash mismatch error gracefully
+    if (-not (Install-WingetSoftware -PackageName "MesloLGS NF" -WingetId "RyanLlamas.MesloLGSNF")) {
+        Write-Warning "Primary Nerd Font package failed. Attempting fallback to official Nerd Fonts repository..."
+        # Fallback to a more generic or different ID if available, or just warn
+        # Currently, RyanLlamas.MesloLGSNF is the main one. If it fails, it's usually a hash mismatch.
+        # We can try to install via direct download as a robust fallback.
+        
+        try {
+            $fontUrl = "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/Meslo.zip"
+            $tempPath = [System.IO.Path]::GetTempPath()
+            $zipPath = Join-Path $tempPath "Meslo.zip"
+            $extractPath = Join-Path $tempPath "MesloFonts"
+            
+            Write-Info "Downloading Meslo Nerd Font from GitHub..."
+            Invoke-WebRequest -Uri $fontUrl -OutFile $zipPath -UseBasicParsing
+            
+            Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+            
+            $fonts = Get-ChildItem -Path $extractPath -Filter "*MesloLGS NF*.ttf" -Recurse
+            if ($fonts) {
+                Write-Info "Installing fonts..."
+                foreach ($font in $fonts) {
+                    # Simple font install via Shell.Application
+                    $shell = New-Object -ComObject Shell.Application
+                    $folder = $shell.Namespace($font.Directory.FullName)
+                    $file = $folder.ParseName($font.Name)
+                    $file.InvokeVerb("Install")
+                }
+                Write-Success "Meslo Nerd Fonts installed manually."
+                return $true
+            }
+        } catch {
+            Write-ErrorMsg "Failed to install Nerd Fonts manually: $($_.Exception.Message)"
+        }
+    }
 }
 
 # Setup Ultimate Performance Power Plan
@@ -1236,6 +1288,8 @@ function Update-AllSoftware {
     
     if ($closedApps.Count -gt 0) {
         Write-Info "Closed $($closedApps.Count) running application(s) for update."
+        # Wait a moment for processes to fully release locks
+        Start-Sleep -Seconds 2
     }
     
     Write-Host ""
@@ -1244,13 +1298,17 @@ function Update-AllSoftware {
     
     try {
         # Run winget directly without capturing output to preserve progress bars and avoid encoding issues
-        $process = Start-Process winget -ArgumentList "upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown" -NoNewWindow -PassThru -Wait
+        # Added --include-unknown to catch everything
+        # Note: Pinned packages (like Discord often is) require explicit upgrade or unpinning.
+        # We will try a general upgrade first.
+        $process = Start-Process winget -ArgumentList "upgrade --all --accept-package-agreements --accept-source-agreements --include-unknown --silent --force" -NoNewWindow -PassThru -Wait
         
         if ($process.ExitCode -eq 0) {
             Write-Success "Update process completed successfully."
             return $true
         } else {
             Write-Warning "Update process completed with exit code: $($process.ExitCode)"
+            Write-Info "Some packages might be pinned or require manual intervention."
             return $false
         }
     } catch {
