@@ -457,57 +457,10 @@ function Install-ShutUp10 {
     }
 }
 
-# Install LoginLight (automatic startup manager)
-function Install-LoginLight {
-    Write-Info "Installing LoginLight (Startup Manager)..."
-    
-    try {
-        Start-Process powershell -ArgumentList "-WindowStyle Hidden", "-Command", "irm https://raw.githubusercontent.com/LightZirconite/LoginLight/main/Install-Startup.ps1 | iex" -WindowStyle Hidden
-        Write-Success "LoginLight installation started in background."
-        return $true
-    } catch {
-        Write-ErrorMsg "Failed to start LoginLight installation: $($_.Exception.Message)"
-        return $false
-    }
-}
-
 # Install Nilesoft Shell
 function Install-NilesoftShell {
     Write-Info "Installing Nilesoft Shell (Context Menu customizer)..."
     Install-WingetSoftware -PackageName "Nilesoft Shell" -WingetId "Nilesoft.Shell"
-}
-
-# Install Windhawk
-function Install-Windhawk {
-    Write-Info "Installing Windhawk (Windows Mods)..."
-    
-    try {
-        Write-Info "Fetching latest Windhawk release..."
-        $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/ramensoftware/windhawk/releases/latest" -UseBasicParsing
-        
-        $asset = $latest.assets | Where-Object { $_.name -like "*_setup.exe" } | Select-Object -First 1
-        
-        if ($asset) {
-            $tempPath = [System.IO.Path]::GetTempPath()
-            $setupFile = Join-Path $tempPath $asset.name
-            
-            Write-Info "Downloading Windhawk installer..."
-            Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $setupFile -UseBasicParsing
-            
-            Write-Info "Installing Windhawk..."
-            Start-Process -FilePath $setupFile -ArgumentList "/VERYSILENT", "/NORESTART" -Wait
-            
-            Remove-Item $setupFile -ErrorAction SilentlyContinue
-            Write-Success "Windhawk installed successfully."
-            return $true
-        } else {
-            Write-ErrorMsg "Could not find Windhawk setup file."
-            return $false
-        }
-    } catch {
-        Write-ErrorMsg "Failed to install Windhawk: $($_.Exception.Message)"
-        return $false
-    }
 }
 
 # Install FluentFlyout (GitHub) for Windows 11
@@ -553,23 +506,12 @@ function Install-FluentFlyout-GitHub {
     }
 }
 
-# Install Flyouts (FluentFlyout for both Windows 10 and 11)
-function Install-Flyouts {
-    Write-Info "Installing FluentFlyout (modern audio/media flyout)..."
-    Install-FluentFlyout-GitHub
-}
-
-# Install WinPaletter
-function Install-WinPaletter {
-    Write-Info "Installing WinPaletter (Windows theming tool)..."
-    Install-WingetSoftware -PackageName "WinPaletter" -WingetId "Abdelrhman-AK.WinPaletter"
-}
-
 # Install Lively Wallpaper
 function Install-LivelyWallpaper {
     Write-Info "Installing Lively Wallpaper..."
     Install-WingetSoftware -PackageName "Lively Wallpaper" -WingetId "DaniJohn.LivelyWallpaper"
 }
+
 
 # Apply Windows 11 Theme Pack
 function Apply-Windows11Theme {
@@ -655,11 +597,6 @@ function Install-StoreApps {
     }
     
     Write-Success "Store apps installation initiated"
-}
-
-# Pin Files App to taskbar (Deprecated/Replaced by Update-TaskbarLayout)
-function Set-FilesAppPinned {
-    # Function kept for compatibility but logic moved to Update-TaskbarLayout
 }
 
 # Install Steam Deck Tools
@@ -751,136 +688,6 @@ function Install-CopilotInstructions {
         return $true
     } catch {
         Write-ErrorMsg "Failed to install Copilot instructions: $($_.Exception.Message)"
-        return $false
-    }
-}
-
-# Update Taskbar Layout (Unpin Explorer)
-function Update-TaskbarLayout {
-    Write-Info "Optimizing Taskbar layout..."
-    
-    try {
-        $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
-        
-        # Check if taskbar folder exists (may not exist on fresh LTSC)
-        if (-not (Test-Path $taskbarPath)) {
-            Write-Info "Taskbar folder not found. Skipping taskbar optimization."
-            return
-        }
-        
-        $explorerLnk = Join-Path $taskbarPath "File Explorer.lnk"
-        
-        if (Test-Path $explorerLnk) {
-            Write-Info "Unpinning classic File Explorer..."
-            Remove-Item $explorerLnk -Force
-            
-            # Restart Explorer to apply changes
-            Write-Info "Restarting Explorer to apply taskbar changes..."
-            Stop-Process -Name explorer -Force
-            Write-Success "Classic File Explorer unpinned."
-        } else {
-            Write-Info "Classic File Explorer not found on taskbar."
-        }
-    } catch {
-        Write-Warning "Could not update taskbar layout: $($_.Exception.Message)"
-    }
-}
-
-# Pin Files App to Taskbar
-function Set-FilesAppTaskbarPin {
-    Write-Info "Checking if Files App is installed..."
-    
-    try {
-        # Try multiple possible package names
-        $filesApp = Get-AppxPackage | Where-Object { $_.Name -like "*Files*" -and $_.Name -notlike "*FileExplorer*" -and $_.Publisher -like "*Yair*" } | Select-Object -First 1
-        
-        if ($filesApp) {
-            Write-Info "Files App detected: $($filesApp.Name)"
-            
-            # Extract the app user model ID
-            $appUserModelId = "$($filesApp.PackageFamilyName)!App"
-            
-            # Create shortcut in TaskBar folder
-            $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
-            
-            if (-not (Test-Path $taskbarPath)) {
-                New-Item -Path $taskbarPath -ItemType Directory -Force | Out-Null
-            }
-            
-            $shortcutPath = Join-Path $taskbarPath "Files.lnk"
-            
-            # Use PowerShell to create an app shortcut
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = "explorer.exe"
-            $shortcut.Arguments = "shell:AppsFolder\$appUserModelId"
-            $shortcut.Save()
-            
-            Write-Success "Files App pinned to taskbar successfully."
-            
-            # Restart Explorer to apply changes
-            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-            
-            return $true
-        } else {
-            Write-Warning "Files App is not installed yet. Skipping taskbar pin."
-            return $false
-        }
-    } catch {
-        Write-Warning "Could not pin Files App to taskbar: $($_.Exception.Message)"
-        Write-Info "You can manually pin Files App by right-clicking it and selecting 'Pin to taskbar'."
-        return $false
-    }
-}
-
-# Pin Rytunex to Taskbar
-function Set-RytunexTaskbarPin {
-    Write-Info "Checking if Rytunex is installed..."
-    
-    try {
-        # Check multiple possible locations for Rytunex
-        $possiblePaths = @(
-            "$env:LOCALAPPDATA\Programs\RyTuneX\RyTuneX.exe",
-            "$env:ProgramFiles\RyTuneX\RyTuneX.exe",
-            "${env:ProgramFiles(x86)}\RyTuneX\RyTuneX.exe"
-        )
-        
-        $rytunexPath = $possiblePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-        
-        if ($rytunexPath) {
-            Write-Info "Rytunex detected at: $rytunexPath"
-            
-            # Create shortcut in TaskBar folder
-            $taskbarPath = "$env:APPDATA\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar"
-            
-            if (-not (Test-Path $taskbarPath)) {
-                New-Item -Path $taskbarPath -ItemType Directory -Force | Out-Null
-            }
-            
-            $shortcutPath = Join-Path $taskbarPath "RyTuneX.lnk"
-            
-            # Create shortcut
-            $shell = New-Object -ComObject WScript.Shell
-            $shortcut = $shell.CreateShortcut($shortcutPath)
-            $shortcut.TargetPath = $rytunexPath
-            $shortcut.WorkingDirectory = [System.IO.Path]::GetDirectoryName($rytunexPath)
-            $shortcut.Save()
-            
-            Write-Success "Rytunex pinned to taskbar successfully."
-            
-            # Restart Explorer to apply changes
-            Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-            
-            return $true
-        } else {
-            Write-Warning "Rytunex executable not found. Skipping taskbar pin."
-            return $false
-        }
-    } catch {
-        Write-Warning "Could not pin Rytunex to taskbar: $($_.Exception.Message)"
-        Write-Info "You can manually pin Rytunex by right-clicking it and selecting 'Pin to taskbar'."
         return $false
     }
 }
@@ -1147,44 +954,30 @@ function Start-Setup {
     # Question: Defender Exclusion Folder
     $choices.SetupExclusionFolder = Get-YesNoChoice -Title "Create 'Excluded' folder in Documents?" -Description "Creates a folder excluded from Windows Defender scans (useful for tools/scripts)"
 
-    # Question 15: Setup Mode
+    # Individual Tool Selection (Replaces Modes)
     Write-Host ""
     Write-Host "============================================" -ForegroundColor Yellow
-    Write-Host "Choose PC Setup Mode:" -ForegroundColor White
-    Write-Host "1. Performance Mode (Pure)" -ForegroundColor White
-    Write-Host "   - Bulk Crap Uninstaller (Deep removal)" -ForegroundColor Gray
-    Write-Host "   - Rytunex (System optimization)" -ForegroundColor Gray
-    Write-Host "   - O&O ShutUp10++ (Telemetry & Privacy)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "2. Performance + Light Style (Custom)" -ForegroundColor White
-    Write-Host "   - All Performance tools" -ForegroundColor Gray
-    Write-Host "   - TranslucentTB (Taskbar transparency)" -ForegroundColor Gray
-    Write-Host ""
-    Write-Host "3. Performance + Full Style (Ultimate)" -ForegroundColor White
-    Write-Host "   - All Performance tools" -ForegroundColor Gray
-    Write-Host "   - TranslucentTB & WinPaletter" -ForegroundColor Gray
-    Write-Host "   - Files App (Modern Explorer)" -ForegroundColor Gray
-    Write-Host "   - Nilesoft Shell (Better Context Menu)" -ForegroundColor Gray
-    Write-Host "   - Windhawk (Mods for Windows)" -ForegroundColor Gray
-    Write-Host "   - Modern/Fluent Flyouts (Better UI overlays)" -ForegroundColor Gray
-    Write-Host "   - Optional: Lively Wallpaper" -ForegroundColor Gray
+    Write-Host "Tool Selection Phase" -ForegroundColor White
     Write-Host "============================================" -ForegroundColor Yellow
     
-    do {
-        $setupMode = Read-Host "Enter choice (1-3)"
-    } while ($setupMode -notin @("1", "2", "3"))
-    
-    $choices.SetupMode = $setupMode
-    
-    # Lively Wallpaper option (Only for Mode 3)
-    if ($setupMode -eq "3") {
-        $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
-        
-        # Windows 11 Theme Pack option (Only for Windows 10 + Mode 3)
-        $osVersion = [System.Environment]::OSVersion.Version
-        if ($osVersion.Major -eq 10 -and $osVersion.Build -lt 22000) {
-            $choices.ApplyWindows11Theme = Get-YesNoChoice -Title "Apply Windows 11 Theme Pack?" -Description "Transforms Windows 10 appearance to look like Windows 11 (wallpaper, colors, sounds)"
-        }
+    $choices.InstallBulkCrapUninstaller = Get-YesNoChoice -Title "Install Bulk Crap Uninstaller?" -Description "Deep software uninstallation tool"
+    $choices.InstallRytunex = Get-YesNoChoice -Title "Install Rytunex?" -Description "System optimization tool"
+    $choices.InstallShutUp10 = Get-YesNoChoice -Title "Install O&O ShutUp10++?" -Description "Privacy & Telemetry control"
+    $choices.InstallTranslucentTB = Get-YesNoChoice -Title "Install TranslucentTB?" -Description "Taskbar transparency tool"
+    $choices.InstallFilesApp = Get-YesNoChoice -Title "Install Files App?" -Description "Modern file manager"
+    $choices.InstallNilesoftShell = Get-YesNoChoice -Title "Install Nilesoft Shell?" -Description "Context Menu customizer"
+    $choices.InstallLivelyWallpaper = Get-YesNoChoice -Title "Install Lively Wallpaper?" -Description "Animated wallpaper engine"
+
+    # Windows 11 Specific: FluentFlyout
+    # Check if Windows 11 (Build >= 22000)
+    $osVersion = [System.Environment]::OSVersion.Version
+    if ($osVersion.Major -eq 10 -and $osVersion.Build -ge 22000) {
+        $choices.InstallFluentFlyout = Get-YesNoChoice -Title "Install FluentFlyout?" -Description "Modern audio/media flyout (Windows 11 style)"
+    }
+
+    # Windows 10 Specific: Theme Pack
+    if ($osVersion.Major -eq 10 -and $osVersion.Build -lt 22000) {
+        $choices.ApplyWindows11Theme = Get-YesNoChoice -Title "Apply Windows 11 Theme Pack?" -Description "Transforms Windows 10 appearance to look like Windows 11"
     }
     
     # Question 16: Steam Deck Tools
@@ -1292,44 +1085,63 @@ function Start-Setup {
         Setup-DefenderExclusion | Out-Null
     }
 
-    # Setup Mode installations
-    # Common Performance Tools (Modes 1, 2, 3)
-    if ($choices.SetupMode -in @("1", "2", "3")) {
-        Write-Info "Installing Performance Mode tools..."
+    # Individual Tool Installations
+    if ($choices.InstallBulkCrapUninstaller) {
         Install-BulkCrapUninstaller | Out-Null
-        Install-Rytunex | Out-Null
-        Install-ShutUp10 | Out-Null
-        Install-LoginLight | Out-Null
-        
-        Write-Info "Recommendation: For maximum performance, consider installing Windows 10 IoT Enterprise LTSC 2021"
-        Write-Info "Download: https://delivery.activated.win/dbmassgrave/en-us_windows_10_iot_enterprise_ltsc_2021_x64_dvd_257ad90f.iso"
     }
     
-    # Mode 2: Performance + Light Style (TranslucentTB)
-    if ($choices.SetupMode -eq "2") {
-        Write-Info "Installing Light Style Mode tools..."
+    if ($choices.InstallRytunex) {
+        Install-Rytunex | Out-Null
+    }
+    
+    if ($choices.InstallShutUp10) {
+        Install-ShutUp10 | Out-Null
+    }
+    
+    if ($choices.InstallTranslucentTB) {
         Install-WingetSoftware -PackageName "TranslucentTB" -WingetId "9PF4KZ2VN4W9" | Out-Null
     }
-
-    # Mode 3: Performance + Full Style
-    if ($choices.SetupMode -eq "3") {
-        Write-Info "Installing Full Style Mode tools..."
-        Install-WinPaletter | Out-Null
-        Install-StoreApps | Out-Null # Includes TranslucentTB & Files App
+    
+    if ($choices.InstallFilesApp) {
+        # Install Files App manually since Install-StoreApps was removed/refactored
+        Write-Info "Installing Files App (modern file manager)..."
+        try {
+            $tempPath = [System.IO.Path]::GetTempPath()
+            $appInstallerFile = Join-Path $tempPath "Files.stable.appinstaller"
+            
+            Write-Info "Downloading Files App installer..."
+            Invoke-WebRequest -Uri "https://files.community/appinstallers/Files.stable.appinstaller" -OutFile $appInstallerFile -UseBasicParsing
+            
+            Write-Info "Installing Files App..."
+            try {
+                Add-AppxPackage -AppInstallerFile $appInstallerFile -ErrorAction Stop
+                Write-Success "Files App installed successfully."
+            } catch {
+                Write-Warning "Silent installation failed. Opening installer for manual installation..."
+                Start-Process $appInstallerFile
+                Write-Info "Please click 'Install' in the window that opened."
+            }
+            
+            Remove-Item $appInstallerFile -ErrorAction SilentlyContinue
+        } catch {
+            Write-ErrorMsg "Failed to download/install Files App: $($_.Exception.Message)"
+        }
+    }
+    
+    if ($choices.InstallNilesoftShell) {
         Install-NilesoftShell | Out-Null
-        Install-Windhawk | Out-Null
-        Install-Flyouts # Smart detection Win10/11
-        
-        # Update taskbar (Unpin Explorer)
-        Update-TaskbarLayout
-        
-        if ($choices.InstallLivelyWallpaper) {
-            Install-LivelyWallpaper | Out-Null
-        }
-        
-        if ($choices.ApplyWindows11Theme) {
-            Apply-Windows11Theme | Out-Null
-        }
+    }
+    
+    if ($choices.InstallFluentFlyout) {
+        Install-FluentFlyout-GitHub | Out-Null
+    }
+    
+    if ($choices.InstallLivelyWallpaper) {
+        Install-LivelyWallpaper | Out-Null
+    }
+    
+    if ($choices.ApplyWindows11Theme) {
+        Apply-Windows11Theme | Out-Null
     }
     
     if ($choices.InstallSteamDeckTools) {
@@ -1402,16 +1214,6 @@ function Start-Setup {
         Update-AllSoftware | Out-Null
     }
     
-    # Final touch: Pin apps to taskbar if installed
-    if ($choices.SetupMode -in @("1", "2", "3")) {
-        Write-Info "Finalizing taskbar configuration..."
-        Set-RytunexTaskbarPin | Out-Null
-    }
-    
-    if ($choices.SetupMode -eq "3") {
-        Set-FilesAppTaskbarPin | Out-Null
-    }
-    
     # Completion
     Write-Host ""
     Write-Host "================================================================" -ForegroundColor Green
@@ -1448,25 +1250,28 @@ function Show-InstalledToolsSummary {
     
     $toolsInstalled = @()
     
-    # Performance tools (installed in all modes)
-    if ($Choices.SetupMode -in @("1", "2", "3")) {
-        $toolsInstalled += @(
-            @{Name="Bulk Crap Uninstaller"; Desc="Advanced software removal tool - removes leftover files and registry entries that standard uninstallers miss"; Source="GitHub: Klocman/Bulk-Crap-Uninstaller"},
-            @{Name="Rytunex"; Desc="System optimization and tweaking tool - improves Windows performance, disables telemetry, and applies registry tweaks"; Source="GitHub: rayenghanmi/RyTuneX"},
-            @{Name="O&O ShutUp10++"; Desc="Privacy configurator - automatically applied recommended settings to disable Windows telemetry and tracking"; Source="oo-software.com"},
-            @{Name="LoginLight"; Desc="Startup manager - controls which programs launch at Windows startup for faster boot times"; Source="GitHub: LightZirconite/LoginLight"}
-        )
+    if ($Choices.InstallBulkCrapUninstaller) {
+        $toolsInstalled += @{Name="Bulk Crap Uninstaller"; Desc="Advanced software removal tool"; Source="GitHub: Klocman/Bulk-Crap-Uninstaller"}
     }
     
-    # Style tools (Mode 3)
-    if ($Choices.SetupMode -eq "3") {
-        $toolsInstalled += @(
-            @{Name="WinPaletter"; Desc="Complete Windows theming tool - customize colors, accents, and visual styles system-wide"; Source="GitHub: Abdelrhman-AK/WinPaletter"},
-            @{Name="Files App"; Desc="Modern file manager replacement - tabs, dual-pane, Git integration, and modern UI"; Source="files.community"},
-            @{Name="Nilesoft Shell"; Desc="Advanced context menu customizer - adds powerful options and customizations to right-click menus"; Source="GitHub: nilesoft/shell"},
-            @{Name="Windhawk"; Desc="Windows customization platform - install mods to modify Windows behavior (taskbar, explorer, etc.)"; Source="GitHub: ramensoftware/windhawk"; Tips="Open Windhawk > Browse mods > Install 'Taskbar volume control' for additional taskbar customization"},
-            @{Name="FluentFlyout"; Desc="Modern audio/media flyout with volume, brightness, and lock keys - compatible with Windows 10 & 11"; Source="GitHub: unchihugo/FluentFlyout"}
-        )
+    if ($Choices.InstallRytunex) {
+        $toolsInstalled += @{Name="Rytunex"; Desc="System optimization and tweaking tool"; Source="GitHub: rayenghanmi/RyTuneX"}
+    }
+    
+    if ($Choices.InstallShutUp10) {
+        $toolsInstalled += @{Name="O&O ShutUp10++"; Desc="Privacy configurator"; Source="oo-software.com"}
+    }
+    
+    if ($Choices.InstallFilesApp) {
+        $toolsInstalled += @{Name="Files App"; Desc="Modern file manager replacement"; Source="files.community"}
+    }
+    
+    if ($Choices.InstallNilesoftShell) {
+        $toolsInstalled += @{Name="Nilesoft Shell"; Desc="Advanced context menu customizer"; Source="GitHub: nilesoft/shell"}
+    }
+    
+    if ($Choices.InstallFluentFlyout) {
+        $toolsInstalled += @{Name="FluentFlyout"; Desc="Modern audio/media flyout"; Source="GitHub: unchihugo/FluentFlyout"}
     }
     
     # Device-specific tools
