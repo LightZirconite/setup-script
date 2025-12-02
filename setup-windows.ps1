@@ -1317,15 +1317,14 @@ function Update-AllSoftware {
     }
 }
 
-# Enable Microsoft Store on LTSC
+# Enable Microsoft Store on LTSC or Debloated Systems
 function Enable-MicrosoftStore {
-    Write-Info "Enabling Microsoft Store on LTSC..."
+    Write-Info "Enabling Microsoft Store..."
     
     try {
+        # Method 1: Native wsreset -i command (Works on newer LTSC builds)
         Write-Info "Attempting native Store installation via wsreset..."
         
-        # Method 1: Native wsreset -i command (Works on newer LTSC builds)
-        # Using Start-Process with full path to avoid path issues
         $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
         if (Test-Path $wsresetPath) {
             # Run silently with Hidden window style
@@ -1334,9 +1333,8 @@ function Enable-MicrosoftStore {
             Write-Warning "wsreset.exe not found in System32."
         }
         
-        Write-Info "Waiting for Store installation to complete..."
         # Wait loop to check if Store appears
-        $timeout = 60 # seconds
+        $timeout = 30 # Reduced timeout to fail faster to fallback
         $timer = 0
         while ($timer -lt $timeout) {
             if (Get-AppxPackage -Name Microsoft.WindowsStore) {
@@ -1349,23 +1347,68 @@ function Enable-MicrosoftStore {
         }
         Write-Host ""
 
-        # Method 2: Fallback to manual registration if wsreset failed
+        # Method 2: Fallback to manual registration if wsreset failed (Existing files)
         Write-Warning "Native installation timed out. Trying manual registration..."
         
         $storeManifest = "C:\Program Files\WindowsApps\Microsoft.WindowsStore*\AppxManifest.xml"
-        if (Test-Path $storeManifest) {
-            Add-AppxPackage -DisableDevelopmentMode -Register $storeManifest
+        # Check if we can find the manifest
+        $manifestPath = Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsStore*AppxManifest.xml" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if ($manifestPath) {
+            Add-AppxPackage -DisableDevelopmentMode -Register $manifestPath.FullName
             Write-Success "Microsoft Store registered manually."
             return $true
+        }
+        
+        # Method 3: Download and Install from GitHub (kkkgo/LTSC-Add-MicrosoftStore)
+        Write-Warning "Local Store files not found. Downloading installer from GitHub..."
+        
+        $tempPath = [System.IO.Path]::GetTempPath()
+        $zipPath = Join-Path $tempPath "LTSC-Add-MicrosoftStore.zip"
+        $extractPath = Join-Path $tempPath "LTSC-Store"
+        
+        # Clean up previous runs
+        Remove-Item $zipPath -ErrorAction SilentlyContinue
+        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Info "Downloading Store package (kkkgo/LTSC-Add-MicrosoftStore)..."
+        # Using the archive link for the master branch
+        Invoke-WebRequest -Uri "https://github.com/kkkgo/LTSC-Add-MicrosoftStore/archive/master.zip" -OutFile $zipPath -UseBasicParsing
+        
+        Write-Info "Extracting package..."
+        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
+        
+        # Find the extracted folder (usually LTSC-Add-MicrosoftStore-master)
+        $rootFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
+        
+        if ($rootFolder) {
+            $scriptPath = Join-Path $rootFolder.FullName "Add-Store.cmd"
+            
+            if (Test-Path $scriptPath) {
+                Write-Info "Running installation script (Add-Store.cmd)..."
+                Write-Warning "A new window may appear. Please wait for it to close."
+                
+                # Run the batch file as admin and wait
+                $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$scriptPath`"" -Verb RunAs -PassThru -Wait
+                
+                # Check again
+                if (Get-AppxPackage -Name Microsoft.WindowsStore) {
+                    Write-Success "Microsoft Store installed successfully via GitHub script."
+                    return $true
+                }
+            } else {
+                Write-ErrorMsg "Installer script (Add-Store.cmd) not found in downloaded package."
+            }
         } else {
-            Write-ErrorMsg "Could not find Store files to register. Please ensure your Windows version supports this."
-            return $false
+            Write-ErrorMsg "Failed to extract Store package."
         }
 
     } catch {
         Write-ErrorMsg "Failed to enable Microsoft Store: $($_.Exception.Message)"
         return $false
     }
+    
+    return $false
 }
 
 # Setup Defender Exclusion Folder
@@ -1416,17 +1459,17 @@ function Start-Setup {
     # LTSC Special Handling: Enable Store EARLY if needed for Winget
     if ($windowsEdition -eq "LTSC") {
         Write-Host "LTSC/IoT Edition Detected." -ForegroundColor Yellow
+    }
+
+    # Check if Store is missing (LTSC or Debloated Standard)
+    if (-not (Get-AppxPackage -Name Microsoft.WindowsStore)) {
+        Write-Info "Microsoft Store is missing."
+        $enableStore = Get-YesNoChoice -Title "Enable Microsoft Store now?" -Description "Required for easier app installation (including Winget/App Installer)"
         
-        # Check if Store is missing
-        if (-not (Get-AppxPackage -Name Microsoft.WindowsStore)) {
-            Write-Info "Microsoft Store is missing (common on LTSC)."
-            $enableStore = Get-YesNoChoice -Title "Enable Microsoft Store now?" -Description "Required for easier app installation (including Winget/App Installer)"
-            
-            if ($enableStore) {
-                Enable-MicrosoftStore | Out-Null
-                # Refresh environment to ensure Store is recognized
-                Start-Sleep -Seconds 2
-            }
+        if ($enableStore) {
+            Enable-MicrosoftStore | Out-Null
+            # Refresh environment to ensure Store is recognized
+            Start-Sleep -Seconds 2
         }
     }
 
