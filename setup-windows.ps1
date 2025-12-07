@@ -1322,32 +1322,45 @@ function Enable-MicrosoftStore {
     Write-Info "Enabling Microsoft Store..."
     
     try {
-        $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
-
-        if (-not (Test-Path $wsresetPath)) {
-            Write-ErrorMsg "wsreset.exe not found in System32. Cannot enable Microsoft Store automatically."
-            return $false
+        # If the package already exists (all users), just re-register it
+        $existing = Get-AppxPackage -AllUsers -Name Microsoft.WindowsStore -ErrorAction SilentlyContinue
+        if ($existing -and $existing.InstallLocation) {
+            $manifest = Join-Path $existing.InstallLocation "AppXManifest.xml"
+            if (Test-Path $manifest) {
+                Add-AppxPackage -DisableDevelopmentMode -Register $manifest -ErrorAction Stop
+                Write-Success "Microsoft Store re-registered successfully."
+                return $true
+            }
         }
 
-        Write-Info "Running wsreset -i (built-in Store registration)..."
-        Start-Process -FilePath $wsresetPath -ArgumentList "-i" -WindowStyle Hidden -Wait
+        # If files are present but not registered (common after debloat), register from system paths
+        $candidateManifests = @(
+            Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsStore*AppxManifest.xml" -Recurse -ErrorAction SilentlyContinue,
+            Join-Path $env:SystemRoot "SystemApps\Microsoft.WindowsStore_8wekyb3d8bbwe\AppXManifest.xml"
+        ) | Where-Object { $_ -and (Test-Path $_) }
 
-        # Wait briefly for registration to complete
-        $timeoutSeconds = 45
-        $elapsed = 0
-        while ($elapsed -lt $timeoutSeconds) {
+        if ($candidateManifests.Count -gt 0) {
+            $manifest = $candidateManifests | Select-Object -First 1
+            Add-AppxPackage -DisableDevelopmentMode -Register $manifest -ErrorAction Stop
+            Write-Success "Microsoft Store registered from existing files."
+            return $true
+        }
+
+        # Last resort: wsreset -i only helps if payloads already exist
+        $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
+        if (Test-Path $wsresetPath) {
+            Write-Info "Running wsreset -i (will succeed only if Store payloads are present)..."
+            Start-Process -FilePath $wsresetPath -ArgumentList "-i" -WindowStyle Hidden -Wait
+            # Quick check (no long wait)
             if (Get-AppxPackage -Name Microsoft.WindowsStore -ErrorAction SilentlyContinue) {
                 Write-Success "Microsoft Store detected after wsreset -i."
                 return $true
             }
-
-            Start-Sleep -Seconds 3
-            $elapsed += 3
-            Write-Host "." -NoNewline -ForegroundColor Gray
+        } else {
+            Write-Warning "wsreset.exe not found in System32."
         }
-        Write-Host ""
 
-        Write-Warning "Microsoft Store not detected after wsreset -i. Please run wsreset -i manually or check Windows Update."
+        Write-Warning "Microsoft Store package not found on disk. LTSC typically ships without it; installation requires the package payload (not downloaded here)."
         return $false
 
     } catch {
