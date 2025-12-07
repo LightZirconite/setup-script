@@ -1322,93 +1322,38 @@ function Enable-MicrosoftStore {
     Write-Info "Enabling Microsoft Store..."
     
     try {
-        # Method 1: Native wsreset -i command (Works on newer LTSC builds)
-        Write-Info "Attempting native Store installation via wsreset..."
-        
         $wsresetPath = Join-Path $env:SystemRoot "System32\wsreset.exe"
-        if (Test-Path $wsresetPath) {
-            # Run silently with Hidden window style
-            Start-Process -FilePath $wsresetPath -ArgumentList "-i" -WindowStyle Hidden -Wait
-        } else {
-            Write-Warning "wsreset.exe not found in System32."
+
+        if (-not (Test-Path $wsresetPath)) {
+            Write-ErrorMsg "wsreset.exe not found in System32. Cannot enable Microsoft Store automatically."
+            return $false
         }
-        
-        # Wait loop to check if Store appears
-        $timeout = 30 # Reduced timeout to fail faster to fallback
-        $timer = 0
-        while ($timer -lt $timeout) {
-            if (Get-AppxPackage -Name Microsoft.WindowsStore) {
-                Write-Success "Microsoft Store installed successfully via native method."
+
+        Write-Info "Running wsreset -i (built-in Store registration)..."
+        Start-Process -FilePath $wsresetPath -ArgumentList "-i" -WindowStyle Hidden -Wait
+
+        # Wait briefly for registration to complete
+        $timeoutSeconds = 45
+        $elapsed = 0
+        while ($elapsed -lt $timeoutSeconds) {
+            if (Get-AppxPackage -Name Microsoft.WindowsStore -ErrorAction SilentlyContinue) {
+                Write-Success "Microsoft Store detected after wsreset -i."
                 return $true
             }
-            Start-Sleep -Seconds 2
-            $timer += 2
+
+            Start-Sleep -Seconds 3
+            $elapsed += 3
             Write-Host "." -NoNewline -ForegroundColor Gray
         }
         Write-Host ""
 
-        # Method 2: Fallback to manual registration if wsreset failed (Existing files)
-        Write-Warning "Native installation timed out. Trying manual registration..."
-        
-        $storeManifest = "C:\Program Files\WindowsApps\Microsoft.WindowsStore*\AppxManifest.xml"
-        # Check if we can find the manifest
-        $manifestPath = Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsStore*AppxManifest.xml" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        
-        if ($manifestPath) {
-            Add-AppxPackage -DisableDevelopmentMode -Register $manifestPath.FullName
-            Write-Success "Microsoft Store registered manually."
-            return $true
-        }
-        
-        # Method 3: Download and Install from GitHub (kkkgo/LTSC-Add-MicrosoftStore)
-        Write-Warning "Local Store files not found. Downloading installer from GitHub..."
-        
-        $tempPath = [System.IO.Path]::GetTempPath()
-        $zipPath = Join-Path $tempPath "LTSC-Add-MicrosoftStore.zip"
-        $extractPath = Join-Path $tempPath "LTSC-Store"
-        
-        # Clean up previous runs
-        Remove-Item $zipPath -ErrorAction SilentlyContinue
-        Remove-Item $extractPath -Recurse -Force -ErrorAction SilentlyContinue
-        
-        Write-Info "Downloading Store package (kkkgo/LTSC-Add-MicrosoftStore)..."
-        # Using the archive link for the master branch
-        Invoke-WebRequest -Uri "https://github.com/kkkgo/LTSC-Add-MicrosoftStore/archive/master.zip" -OutFile $zipPath -UseBasicParsing
-        
-        Write-Info "Extracting package..."
-        Expand-Archive -Path $zipPath -DestinationPath $extractPath -Force
-        
-        # Find the extracted folder (usually LTSC-Add-MicrosoftStore-master)
-        $rootFolder = Get-ChildItem -Path $extractPath -Directory | Select-Object -First 1
-        
-        if ($rootFolder) {
-            $scriptPath = Join-Path $rootFolder.FullName "Add-Store.cmd"
-            
-            if (Test-Path $scriptPath) {
-                Write-Info "Running installation script (Add-Store.cmd)..."
-                Write-Warning "A new window may appear. Please wait for it to close."
-                
-                # Run the batch file as admin and wait
-                $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$scriptPath`"" -Verb RunAs -PassThru -Wait
-                
-                # Check again
-                if (Get-AppxPackage -Name Microsoft.WindowsStore) {
-                    Write-Success "Microsoft Store installed successfully via GitHub script."
-                    return $true
-                }
-            } else {
-                Write-ErrorMsg "Installer script (Add-Store.cmd) not found in downloaded package."
-            }
-        } else {
-            Write-ErrorMsg "Failed to extract Store package."
-        }
+        Write-Warning "Microsoft Store not detected after wsreset -i. Please run wsreset -i manually or check Windows Update."
+        return $false
 
     } catch {
         Write-ErrorMsg "Failed to enable Microsoft Store: $($_.Exception.Message)"
         return $false
     }
-    
-    return $false
 }
 
 # Setup Defender Exclusion Folder
