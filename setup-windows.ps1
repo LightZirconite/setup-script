@@ -1421,14 +1421,13 @@ function Start-Setup {
 
     # Check if Store is missing (LTSC or Debloated Standard)
     if (-not (Get-AppxPackage -Name Microsoft.WindowsStore)) {
-        Write-Info "Microsoft Store is missing."
-        $enableStore = Get-YesNoChoice -Title "Enable Microsoft Store now?" -Description "Required for easier app installation (including Winget/App Installer)"
-        
-        if ($enableStore) {
-            Enable-MicrosoftStore | Out-Null
-            # Refresh environment to ensure Store is recognized
-            Start-Sleep -Seconds 2
+        Write-Info "Microsoft Store is missing. Attempting local re-register (no downloads)."
+        $storeEnabled = Enable-MicrosoftStore
+        if (-not $storeEnabled) {
+            Write-Warning "Store payload not found on disk; cannot enable Store without the package. Continuing without Store."
         }
+        # Refresh environment to ensure Store is recognized if it was present
+        Start-Sleep -Seconds 2
     }
 
     # Ensure Winget and Frameworks are installed immediately
