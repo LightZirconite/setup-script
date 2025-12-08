@@ -1335,7 +1335,7 @@ function Enable-MicrosoftStore {
 
         # If files are present but not registered (common after debloat), register from system paths
         $candidateManifests = @(
-            Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsStore*AppxManifest.xml" -Recurse -ErrorAction SilentlyContinue,
+            Get-ChildItem -Path "C:\Program Files\WindowsApps" -Filter "Microsoft.WindowsStore*AppxManifest.xml" -Recurse -ErrorAction SilentlyContinue
             Join-Path $env:SystemRoot "SystemApps\Microsoft.WindowsStore_8wekyb3d8bbwe\AppXManifest.xml"
         ) | Where-Object { $_ -and (Test-Path $_) }
 
